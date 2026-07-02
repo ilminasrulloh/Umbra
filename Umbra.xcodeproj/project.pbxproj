@@ -10,9 +10,22 @@
 		2F72A7D52FF4C06C00C33763 /* Umbra.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Umbra.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		3EB2A5D72FF6661200E6A056 /* Exceptions for "Umbra" folder in "Umbra" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 2F72A7D42FF4C06C00C33763 /* Umbra */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		2F72A7D72FF4C06C00C33763 /* Umbra */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				3EB2A5D72FF6661200E6A056 /* Exceptions for "Umbra" folder in "Umbra" target */,
+			);
 			path = Umbra;
 			sourceTree = "<group>";
 		};
@@ -253,9 +266,12 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 54B9GW8776;
+				DEVELOPMENT_TEAM = 3H679F4ZT9;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Umbra/Info.plist;
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Ask for User's Location for Mapping";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Ask for User's Location for Mapping";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -266,7 +282,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = appledevbsd.Umbra;
+				PRODUCT_BUNDLE_IDENTIFIER = Lin.com.Umbra;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -285,9 +301,12 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 54B9GW8776;
+				DEVELOPMENT_TEAM = 3H679F4ZT9;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Umbra/Info.plist;
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Ask for User's Location for Mapping";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Ask for User's Location for Mapping";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -298,7 +317,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = appledevbsd.Umbra;
+				PRODUCT_BUNDLE_IDENTIFIER = Lin.com.Umbra;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
