@@ -10,9 +10,17 @@ import Combine
 import MapKit
 import WeatherKit
 
+enum Field: Hashable {
+    case origin
+    case destination
+}
+
 struct MapView: View {
+    
+    
     @State private var locationManager = UserLocationManager()
     @State private var weatherManager = WeatherManager()
+    @State private var routeMapManager = RouteMapManager()
     
     @State private var expandUVIndexButton = false
     @State private var expandWeatherButton = false
@@ -23,6 +31,10 @@ struct MapView: View {
     @State private var currentPresentationDetents: PresentationDetent = .fraction(0.1)
     
     @State private var userCurrentPosition: MapCameraPosition = .userLocation(fallback: .automatic)
+    
+    @State private var userOriginText = ""
+    @State private var userDestinationText = ""
+    @FocusState private var clickedTextField: Field?
     
     var body: some View {
         Map(position: $userCurrentPosition) {
@@ -42,11 +54,19 @@ struct MapView: View {
             }
         }
         .sheet(isPresented: $showBottomPanelSheet) {
-            BottomPanelSheetView(currentPresentationDetents: $currentPresentationDetents)
-                .interactiveDismissDisabled()
-                .presentationDetents([.fraction(0.1), .large], selection: $currentPresentationDetents)
-                .presentationDragIndicator(.visible)
-                .presentationBackgroundInteraction(.enabled)
+            if currentPresentationDetents == .large {
+                ExtendedBottomPanelSheetView(currentPresentationDetents: $currentPresentationDetents, userOrigin: $userOriginText, userDestination: $userDestinationText, routeMapManager: $routeMapManager)
+                    .interactiveDismissDisabled()
+                    .presentationDetents([.fraction(0.1), .large], selection: $currentPresentationDetents)
+                    .presentationDragIndicator(.visible)
+                    .presentationBackgroundInteraction(.enabled)
+            } else {
+                NormalBottomPanelSheetView(currentPresentationDetents: $currentPresentationDetents, userOrigin: $userOriginText, userDestination: $userDestinationText)
+                    .interactiveDismissDisabled()
+                    .presentationDetents([.fraction(0.1), .large], selection: $currentPresentationDetents)
+                    .presentationDragIndicator(.visible)
+                    .presentationBackgroundInteraction(.enabled)
+            }
         }
         .overlay(alignment: .topLeading){
             weatherAndUVIndexView(expandUVIndexButton: $expandUVIndexButton, expandWeatherButton: $expandWeatherButton, weatherManager: weatherManager)
@@ -141,17 +161,82 @@ struct weatherAndUVIndexView: View {
     }
 }
 
-struct BottomPanelSheetView: View {
+struct ExtendedBottomPanelSheetView: View {
     @Binding var currentPresentationDetents: PresentationDetent
+    @Binding var userOrigin: String
+    @Binding var userDestination: String
+    
+    @Binding var routeMapManager: RouteMapManager
+    
+    @State private var showDestination = true
+    
+    var body: some View {
+        VStack (alignment: .leading) {
+            HStack {
+                HStack {
+                    Image(systemName: "magnifyingglass")
+                    TextField("Search Destination", text: $userDestination)
+                        .onChange(of: $userDestination.wrappedValue) { newUserDestination in
+                            if showDestination {
+                                routeMapManager.SearchLocation(query: newUserDestination)
+                            }
+                            
+                        }
+                    
+                    if !$userDestination.wrappedValue.isEmpty {
+                        Button(action: {}) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.gray)
+                        }
+                    }
+                    
+                }
+                .padding(.vertical, 10)
+                .padding(.horizontal, 20)
+                .frame(maxWidth: .infinity)
+                .background(Color(.tertiarySystemFill))
+                .cornerRadius(30)
+                
+                Button(action: {currentPresentationDetents = .fraction(0.1)}) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.largeTitle)
+                        .foregroundStyle(Color(.secondaryLabel))
+                }
+            }
+            .padding(20)
+            
+            if userDestination == "" {
+                Text("Nearby")
+                    .fontWeight(.medium)
+                    .padding(.leading, 20)
+                
+                Spacer()
+            } else {
+                ScrollView {
+                    LocationSuggestionListView(routeMapManager: $routeMapManager)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            
+            
+        }
+    }
+}
+
+struct NormalBottomPanelSheetView: View {
+    @Binding var currentPresentationDetents: PresentationDetent
+    @Binding var userOrigin: String
+    @Binding var userDestination: String
     
     var body: some View {
         HStack {
             Image(systemName: "magnifyingglass")
             Text("Search Destination")
+            
         }
         .padding(.vertical, 10)
         .padding(.horizontal, 20)
-        .padding(.trailing, 200)
+        .frame(width: 350)
         .background(Color(.tertiarySystemFill))
         .foregroundStyle(Color(.secondaryLabel))
         .cornerRadius(30)
@@ -160,7 +245,55 @@ struct BottomPanelSheetView: View {
             currentPresentationDetents = .large
         }
     }
+}
+
+struct LocationSuggestionListView: View {
+    @Binding var routeMapManager: RouteMapManager
     
+    var body: some View {
+        VStack (spacing: 0) {
+            ForEach(routeMapManager.results, id: \.self) { result in
+                Button {
+                    routeMapManager.MoveToSelectedLocation(completion: result)
+                } label: {
+                    VStack (alignment: .leading, spacing: 2){
+                        HStack (spacing: 2){
+                            Circle()
+                                .fill(Color(.systemGray4))
+                                .frame(width: 40, height: 40)
+                                .overlay(
+                                    Image(systemName: "building.2.fill")
+                                        .foregroundStyle(Color(.white))
+                                        .font(.system(size: 14))
+                                )
+                                .padding(.trailing, 20)
+                            
+                            VStack (alignment: .leading) {
+                                Text(result.title)
+                                    .foregroundStyle(Color(.black))
+                                HStack {
+                                    Text("Distance")
+                                    Text("•")
+                                    Text("Alamat")
+                                }
+                                .foregroundStyle(Color(.systemGray2))
+                                
+                                Divider()
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 10)
+                    .padding(.horizontal, 20)
+                    .background(Color(.systemGray6))
+                   
+                }
+                
+            }
+        }
+        .cornerRadius(20)
+        .padding(.horizontal, 30)
+    }
 }
 
 #Preview {

@@ -75,6 +75,18 @@ class RouteMapManager: NSObject, MKLocalSearchCompleterDelegate {
     func completer(_ completer: MKLocalSearchCompleter, didFailWithError error: Error) {
         results = []
     }
+    
+    func MoveToSelectedLocation(completion: MKLocalSearchCompletion) {
+        let request = MKLocalSearch.Request(completion: completion)
+        MKLocalSearch(request: request).start { response, _ in
+            guard let coordinate = response?.mapItems.first?.placemark.coordinate else { return }
+            
+//            Task { @MainActor in
+//                await assignCoordinate(coordinate, to: activeField, title: completion.title)
+//            }
+            
+        }
+    }
 }
 
 @Observable()
