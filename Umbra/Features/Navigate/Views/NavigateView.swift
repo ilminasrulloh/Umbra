@@ -10,7 +10,7 @@ import Combine
 import MapKit
 
 struct NavigateView: View {
-    @StateObject private var locationManager = UserLocationManager()
+    @StateObject private var locationManager = LocationManager()
     @State private var showBottomPanelSheet = true
     @State private var userCurrentPosition: MapCameraPosition = .userLocation(fallback: .automatic)
     
