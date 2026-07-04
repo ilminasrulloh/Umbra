@@ -16,8 +16,6 @@ enum Field: Hashable {
 }
 
 struct MapView: View {
-    
-    
     @State private var locationManager = UserLocationManager()
     @State private var weatherManager = WeatherManager()
     @State private var routeMapManager = RouteMapManager()
@@ -34,6 +32,7 @@ struct MapView: View {
     
     @State private var userOriginText = ""
     @State private var userDestinationText = ""
+    @State private var showDestination = true
     @FocusState private var clickedTextField: Field?
     
     var body: some View {
@@ -54,19 +53,18 @@ struct MapView: View {
             }
         }
         .sheet(isPresented: $showBottomPanelSheet) {
-            if currentPresentationDetents == .large {
-                ExtendedBottomPanelSheetView(currentPresentationDetents: $currentPresentationDetents, userOrigin: $userOriginText, userDestination: $userDestinationText, routeMapManager: $routeMapManager)
-                    .interactiveDismissDisabled()
-                    .presentationDetents([.fraction(0.1), .large], selection: $currentPresentationDetents)
-                    .presentationDragIndicator(.visible)
-                    .presentationBackgroundInteraction(.enabled)
-            } else {
-                NormalBottomPanelSheetView(currentPresentationDetents: $currentPresentationDetents, userOrigin: $userOriginText, userDestination: $userDestinationText)
-                    .interactiveDismissDisabled()
-                    .presentationDetents([.fraction(0.1), .large], selection: $currentPresentationDetents)
-                    .presentationDragIndicator(.visible)
-                    .presentationBackgroundInteraction(.enabled)
-            }
+            BottomPanelSheetView(
+                currentPresentationDetents: $currentPresentationDetents,
+                userOrigin: $userOriginText,
+                userDestination: $userDestinationText,
+                routeMapManager: $routeMapManager,
+                showDestination: $showDestination,
+                focusedField: $clickedTextField
+            )
+            .interactiveDismissDisabled()
+            .presentationDetents([.fraction(0.1), .large], selection: $currentPresentationDetents)
+            .presentationDragIndicator(.visible)
+            .presentationBackgroundInteraction(.enabled)
         }
         .overlay(alignment: .topLeading){
             weatherAndUVIndexView(expandUVIndexButton: $expandUVIndexButton, expandWeatherButton: $expandWeatherButton, weatherManager: weatherManager)
@@ -161,14 +159,16 @@ struct weatherAndUVIndexView: View {
     }
 }
 
-struct ExtendedBottomPanelSheetView: View {
+struct BottomPanelSheetView: View {
     @Binding var currentPresentationDetents: PresentationDetent
     @Binding var userOrigin: String
     @Binding var userDestination: String
     
     @Binding var routeMapManager: RouteMapManager
+    @Binding var showDestination: Bool
     
-    @State private var showDestination = true
+    var focusedField: FocusState<Field?>.Binding
+    var isExtended: Bool { currentPresentationDetents == .large}
     
     var body: some View {
         VStack (alignment: .leading) {
@@ -176,73 +176,69 @@ struct ExtendedBottomPanelSheetView: View {
                 HStack {
                     Image(systemName: "magnifyingglass")
                     TextField("Search Destination", text: $userDestination)
+                        .disabled(!isExtended)
+                        .focused(focusedField, equals: .destination)
                         .onChange(of: $userDestination.wrappedValue) { newUserDestination in
                             if showDestination {
                                 routeMapManager.SearchLocation(query: newUserDestination)
                             }
                             
                         }
+                        .overlay {
+                            if !isExtended {
+                                Color.clear
+                                    .contentShape(Rectangle())
+                                    .onTapGesture {
+                                        withAnimation {
+                                            currentPresentationDetents = .large
+                                        } completion: {
+                                            focusedField.wrappedValue = .destination
+                                        }
+                                    }
+                            }
+                        }
                     
-                    if !$userDestination.wrappedValue.isEmpty {
-                        Button(action: {}) {
+                    
+                    if isExtended && !userDestination.isEmpty {
+                        Button(action: {routeMapManager.clearField(text:$userDestination)}) {
                             Image(systemName: "xmark.circle.fill")
                                 .foregroundColor(.gray)
                         }
                     }
-                    
                 }
                 .padding(.vertical, 10)
                 .padding(.horizontal, 20)
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: isExtended ? .infinity : 350)
                 .background(Color(.tertiarySystemFill))
                 .cornerRadius(30)
                 
-                Button(action: {currentPresentationDetents = .fraction(0.1)}) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.largeTitle)
-                        .foregroundStyle(Color(.secondaryLabel))
+                if isExtended {
+                    Button(action: {
+                        focusedField.wrappedValue = nil
+                        currentPresentationDetents = .fraction(0.1)
+                    }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.largeTitle)
+                            .foregroundStyle(Color(.secondaryLabel))
+                    }
                 }
             }
-            .padding(20)
+            .padding(isExtended ? 20 : 0)
             
-            if userDestination == "" {
-                Text("Nearby")
-                    .fontWeight(.medium)
-                    .padding(.leading, 20)
-                
-                Spacer()
-            } else {
-                ScrollView {
-                    LocationSuggestionListView(routeMapManager: $routeMapManager)
+            if isExtended {
+                if userDestination.isEmpty {
+                    Text("Nearby")
+                        .fontWeight(.medium)
+                        .padding(.leading, 20)
+                    
+                    Spacer()
+                } else {
+                    ScrollView {
+                        LocationSuggestionListView(routeMapManager: $routeMapManager)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            
-            
-        }
-    }
-}
-
-struct NormalBottomPanelSheetView: View {
-    @Binding var currentPresentationDetents: PresentationDetent
-    @Binding var userOrigin: String
-    @Binding var userDestination: String
-    
-    var body: some View {
-        HStack {
-            Image(systemName: "magnifyingglass")
-            Text("Search Destination")
-            
-        }
-        .padding(.vertical, 10)
-        .padding(.horizontal, 20)
-        .frame(width: 350)
-        .background(Color(.tertiarySystemFill))
-        .foregroundStyle(Color(.secondaryLabel))
-        .cornerRadius(30)
-        
-        .onTapGesture {
-            currentPresentationDetents = .large
         }
     }
 }
@@ -286,7 +282,7 @@ struct LocationSuggestionListView: View {
                     .padding(.vertical, 10)
                     .padding(.horizontal, 20)
                     .background(Color(.systemGray6))
-                   
+                    
                 }
                 
             }
