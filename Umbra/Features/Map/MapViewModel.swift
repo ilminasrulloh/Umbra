@@ -87,6 +87,10 @@ class RouteMapManager: NSObject, MKLocalSearchCompleterDelegate {
             
         }
     }
+    
+    func clearField(text: Binding<String>) {
+        text.wrappedValue = ""
+    }
 }
 
 @Observable()
