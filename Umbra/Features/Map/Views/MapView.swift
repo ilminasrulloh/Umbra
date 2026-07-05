@@ -166,6 +166,7 @@ struct BottomPanelSheetView: View {
     
     @Binding var routeMapManager: RouteMapManager
     @Binding var showDestination: Bool
+    @State private var expandDestinationInformation: MKLocalSearchCompletion? = nil
     
     var focusedField: FocusState<Field?>.Binding
     var isExtended: Bool { currentPresentationDetents == .large}
@@ -219,7 +220,10 @@ struct BottomPanelSheetView: View {
                     }) {
                         Image(systemName: "xmark.circle.fill")
                             .font(.largeTitle)
-                            .foregroundStyle(Color(.secondaryLabel))
+                            .fontWeight(.light)
+                            .symbolRenderingMode(.palette)
+                            .foregroundStyle(Color(.black), Color(.systemGray3))
+                            
                     }
                 }
             }
@@ -234,7 +238,20 @@ struct BottomPanelSheetView: View {
                     Spacer()
                 } else {
                     ScrollView {
-                        LocationSuggestionListView(routeMapManager: $routeMapManager)
+                        VStack (spacing: 0) {
+                            ForEach(routeMapManager.results, id: \.self) { result in
+                                LocationSuggestionView(
+                                    result: result,
+                                    expandDestinationInformation: expandDestinationInformation == result,
+                                    onTap: {
+                                        withAnimation {
+                                            expandDestinationInformation = (expandDestinationInformation == result) ? nil : result
+                                        }
+                                    }
+                                )
+                                
+                            }
+                        }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -243,51 +260,67 @@ struct BottomPanelSheetView: View {
     }
 }
 
-struct LocationSuggestionListView: View {
-    @Binding var routeMapManager: RouteMapManager
+struct LocationSuggestionView: View {
+    var result: MKLocalSearchCompletion
+    var expandDestinationInformation: Bool
+    var onTap: () -> Void
+    //    @Binding var routeMapManager: RouteMapManager
     
     var body: some View {
-        VStack (spacing: 0) {
-            ForEach(routeMapManager.results, id: \.self) { result in
-                Button {
-                    routeMapManager.MoveToSelectedLocation(completion: result)
-                } label: {
-                    VStack (alignment: .leading, spacing: 2){
-                        HStack (spacing: 2){
-                            Circle()
-                                .fill(Color(.systemGray4))
-                                .frame(width: 40, height: 40)
-                                .overlay(
-                                    Image(systemName: "building.2.fill")
-                                        .foregroundStyle(Color(.white))
-                                        .font(.system(size: 14))
-                                )
-                                .padding(.trailing, 20)
-                            
-                            VStack (alignment: .leading) {
-                                Text(result.title)
-                                    .foregroundStyle(Color(.black))
-                                HStack {
-                                    Text("Distance")
-                                    Text("•")
-                                    Text("Alamat")
-                                }
-                                .foregroundStyle(Color(.systemGray2))
-                                
-                                Divider()
-                            }
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 10)
-                    .padding(.horizontal, 20)
-                    .background(Color(.systemGray6))
+        
+        Button(action: onTap){
+            VStack (alignment: .leading, spacing: 2){
+                HStack (spacing: 2){
+                    Circle()
+                        .fill(Color(.systemGray4))
+                        .frame(width: 40, height: 40)
+                        .overlay(
+                            Image(systemName: "building.2.fill")
+                                .foregroundStyle(Color(.white))
+                                .font(.system(size: 14))
+                        )
+                        .padding(.trailing, 20)
                     
+                    VStack (alignment: .leading) {
+                        Text(result.title)
+                            .foregroundStyle(Color(.black))
+                        HStack {
+                            Text("Distance")
+                            Text("•")
+                            Text("Alamat")
+                        }
+                        .foregroundStyle(Color(.systemGray2))
+                    }
                 }
                 
+                if expandDestinationInformation  {
+                    Button {
+                    
+                    } label  : {
+                        Text("See Routes")
+                        .font(.footnote)
+                        .fontWeight(.medium)
+                        .foregroundStyle(Color(.white))
+                        .padding(8)
+                        .frame(maxWidth: .infinity)
+                        .background(Color(.blue))
+                        .cornerRadius(25)
+                    }
+
+                    .padding(.top, 8)
+                    .padding(.bottom, 4)
+                }
+                
+                Divider()
+                    .padding(.top, 10)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 10)
+            .padding(.horizontal, 20)
+            .background(Color(.systemGray6))
         }
         .cornerRadius(20)
+        .padding(.vertical, expandDestinationInformation ? 8 : 0)
         .padding(.horizontal, 30)
     }
 }
