@@ -16,49 +16,35 @@ enum Field: Hashable {
 }
 
 struct MapView: View {
-    @State private var locationManager = UserLocationManager()
-    @State private var weatherManager = WeatherManager()
-    @State private var routeMapManager = RouteMapManager()
+    @State private var viewModel = MapViewModel()
     
-    @State private var expandUVIndexButton = false
-    @State private var expandWeatherButton = false
+    @State var expandUVIndexButton = false
+    @State var expandWeatherButton = false
+    @State var showBottomPanelSheet = true
+    @State var currentPresentationDetents: PresentationDetent = .fraction(0.1)
     
-    @State private var pingWeatherManager = false
-    
-    @State private var showBottomPanelSheet = true
-    @State private var currentPresentationDetents: PresentationDetent = .fraction(0.1)
-    
-    @State private var userCurrentPosition: MapCameraPosition = .userLocation(fallback: .automatic)
-    
-    @State private var userOriginText = ""
-    @State private var userDestinationText = ""
-    @State private var showDestination = true
-    @FocusState private var clickedTextField: Field?
+    @FocusState var clickedTextField: Field?
     
     var body: some View {
-        Map(position: $userCurrentPosition) {
+        Map(position: $viewModel.userCurrentPosition) {
             UserAnnotation()
         }
         .ignoresSafeArea()
         .onAppear {
-            locationManager.RequestUserLocation()
+            viewModel.RequestUserLocation()
         }
-        .onChange(of: locationManager.userLocation) { newLocation in
-            if let location = newLocation {
-                if pingWeatherManager {
-                    Task {
-                        await weatherManager.GetCurrentWeather(for: location)
-                    }
+        .onChange(of: viewModel.locationManager.userLocation) { oldValue, newLocation in
+            if let location = newLocation, viewModel.pingWeatherManager {
+                Task {
+                    await viewModel.GetCurrentWeather(for: location)
                 }
             }
+            
         }
         .sheet(isPresented: $showBottomPanelSheet) {
             BottomPanelSheetView(
+                viewModel: viewModel,
                 currentPresentationDetents: $currentPresentationDetents,
-                userOrigin: $userOriginText,
-                userDestination: $userDestinationText,
-                routeMapManager: $routeMapManager,
-                showDestination: $showDestination,
                 focusedField: $clickedTextField
             )
             .interactiveDismissDisabled()
@@ -66,110 +52,21 @@ struct MapView: View {
             .presentationDragIndicator(.visible)
             .presentationBackgroundInteraction(.enabled)
         }
-        .overlay(alignment: .topLeading){
-            weatherAndUVIndexView(expandUVIndexButton: $expandUVIndexButton, expandWeatherButton: $expandWeatherButton, weatherManager: weatherManager)
+        .overlay(alignment: .topLeading) {
+            weatherAndUVIndexView(
+                viewModel: viewModel,
+                expandUVIndexButton: $expandUVIndexButton,
+                expandWeatherButton: $expandWeatherButton
+            )
         }
-    }
-}
-
-struct weatherAndUVIndexView: View {
-    @Binding var expandUVIndexButton: Bool
-    @Binding var expandWeatherButton: Bool
-    
-    var weatherManager: WeatherManager
-    
-    var body: some View {
-        HStack (alignment: .top) {
-            Button(action: {expandWeatherButton.toggle()}) {
-                if expandWeatherButton {
-                    VStack (alignment: .leading) {
-                        HStack {
-                            Image(systemName: weatherManager.weatherSymbolName)
-                                .padding(.trailing, 5)
-                            Text(weatherManager.temperature)
-                        }
-                        Text(weatherManager.feelsLike)
-                            .padding(.top, 2)
-                    }
-                    .fontWeight(.medium)
-                    .padding(.vertical, 15)
-                    .padding(.leading, 20)
-                    .padding(.trailing, 30)
-                    .background(.ultraThickMaterial)
-                    .cornerRadius(20)
-                    .padding(.leading, 20)
-                    .padding(.trailing, 10)
-                    
-                } else {
-                    HStack {
-                        Image(systemName: weatherManager.weatherSymbolName)
-                            .padding(.trailing, 5)
-                        Text(weatherManager.temperature)
-                    }
-                    .fontWeight(.medium)
-                    .padding(.vertical, 15)
-                    .padding(.horizontal, 20)
-                    .background(.ultraThickMaterial)
-                    .cornerRadius(25)
-                    .padding(.leading, 20)
-                    .padding(.trailing, 10)
-                }
-            }
-            
-            
-            Button(action: {expandUVIndexButton.toggle()}) {
-                if expandUVIndexButton {
-                    VStack (alignment: .leading) {
-                        HStack {
-                            Image(systemName: "sun.min")
-                                .padding(.trailing, 5)
-                            Text("\(weatherManager.uvIndex)")
-                        }
-                        Text(weatherManager.uvCategory)
-                            .font(.caption)
-                            .foregroundStyle(Color(.systemGray))
-                        Text("Use Sunscreen")
-                            .font(.default)
-                            .foregroundStyle(Color(.systemGray))
-                    }
-                    .fontWeight(.medium)
-                    .padding(.vertical, 15)
-                    .padding(.leading, 20)
-                    .padding(.trailing, 30)
-                    .background(.ultraThickMaterial)
-                    .cornerRadius(20)
-                    .padding(.leading, 10)
-                    
-                } else {
-                    HStack {
-                        Image(systemName: "sun.min")
-                            .padding(.trailing, 5)
-                        Text("\(weatherManager.uvIndex)")
-                    }
-                    .fontWeight(.medium)
-                    .padding(.vertical, 15)
-                    .padding(.horizontal, 20)
-                    .background(.ultraThickMaterial)
-                    .cornerRadius(25)
-                    .padding(.leading, 10)
-                }
-            }
-        }
-        .foregroundStyle(Color(.black))
     }
 }
 
 struct BottomPanelSheetView: View {
+    @Bindable var viewModel: MapViewModel
     @Binding var currentPresentationDetents: PresentationDetent
-    @Binding var userOrigin: String
-    @Binding var userDestination: String
-    
-    @Binding var routeMapManager: RouteMapManager
-    @Binding var showDestination: Bool
-    @State private var expandDestinationInformation: MKLocalSearchCompletion? = nil
-    @State private var firstResult: MKLocalSearchCompletion? = nil
-    
     var focusedField: FocusState<Field?>.Binding
+    
     var isExtended: Bool { currentPresentationDetents == .large}
     
     var body: some View {
@@ -177,12 +74,12 @@ struct BottomPanelSheetView: View {
             HStack {
                 HStack {
                     Image(systemName: "magnifyingglass")
-                    TextField("Search Destination", text: $userDestination)
+                    TextField("Search Destination", text: $viewModel.userDestinationText)
                         .disabled(!isExtended)
                         .focused(focusedField, equals: .destination)
-                        .onChange(of: $userDestination.wrappedValue) { newUserDestination in
-                            if showDestination {
-                                routeMapManager.SearchLocation(query: newUserDestination)
+                        .onChange(of: $viewModel.userDestinationText.wrappedValue) { newUserDestination in
+                            if viewModel.showDestination {
+                                viewModel.SearchLocation(query: newUserDestination)
                             }
                             
                         }
@@ -201,8 +98,10 @@ struct BottomPanelSheetView: View {
                         }
                     
                     
-                    if isExtended && !userDestination.isEmpty {
-                        Button(action: {routeMapManager.clearField(text:$userDestination)}) {
+                    if isExtended && !(viewModel.userDestinationText).isEmpty {
+                        Button(action: {
+                            viewModel.userDestinationText = ""
+                        }) {
                             Image(systemName: "xmark.circle.fill")
                                 .foregroundColor(.gray)
                         }
@@ -231,7 +130,7 @@ struct BottomPanelSheetView: View {
             .padding(isExtended ? 20 : 0)
             
             if isExtended {
-                if userDestination.isEmpty {
+                if viewModel.userDestinationText.isEmpty {
                     Text("Nearby")
                         .fontWeight(.medium)
                         .padding(.leading, 20)
@@ -240,10 +139,10 @@ struct BottomPanelSheetView: View {
                 } else {
                     ScrollView {
                         VStack (spacing: 0) {
-                            ForEach(routeMapManager.results, id: \.self) { result in
+                            ForEach(viewModel.results, id: \.self) { result in
                                 LocationSuggestionView(
-                                    result: result,
-                                    routeMapManager: routeMapManager
+                                    viewModel: viewModel,
+                                    result: result
                                 )
                                 
                             }
@@ -257,11 +156,10 @@ struct BottomPanelSheetView: View {
 }
 
 struct LocationSuggestionView: View {
+    @Bindable var viewModel: MapViewModel
     var result: MKLocalSearchCompletion
-    var routeMapManager: RouteMapManager
     
     var body: some View {
-        
         Button {
             
         } label : {
@@ -289,7 +187,7 @@ struct LocationSuggestionView: View {
                     }
                 }
                 
-                if routeMapManager.results.first == result  {
+                if viewModel.results.first == result  {
                     Button {
                     
                     } label  : {
@@ -316,8 +214,94 @@ struct LocationSuggestionView: View {
             .background(Color(.systemGray6))
         }
         .cornerRadius(20)
-        .padding(.bottom, routeMapManager.results.first == result ? 8 : 0)
+        .padding(.bottom, viewModel.results.first == result ? 8 : 0)
         .padding(.horizontal, 30)
+    }
+}
+
+struct weatherAndUVIndexView: View {
+    @Bindable var viewModel: MapViewModel
+    @Binding var expandUVIndexButton: Bool
+    @Binding var expandWeatherButton: Bool
+    
+    var body: some View {
+        HStack (alignment: .top) {
+            Button(action: {expandWeatherButton.toggle()}) {
+                if expandWeatherButton {
+                    VStack (alignment: .leading) {
+                        HStack {
+                            Image(systemName: viewModel.weatherSymbolName)
+                                .padding(.trailing, 5)
+                            Text(viewModel.temperature)
+                        }
+                        Text(viewModel.feelsLike)
+                            .padding(.top, 2)
+                    }
+                    .fontWeight(.medium)
+                    .padding(.vertical, 15)
+                    .padding(.leading, 20)
+                    .padding(.trailing, 30)
+                    .background(.ultraThickMaterial)
+                    .cornerRadius(20)
+                    .padding(.leading, 20)
+                    .padding(.trailing, 10)
+                    
+                } else {
+                    HStack {
+                        Image(systemName: viewModel.weatherSymbolName)
+                            .padding(.trailing, 5)
+                        Text(viewModel.temperature)
+                    }
+                    .fontWeight(.medium)
+                    .padding(.vertical, 15)
+                    .padding(.horizontal, 20)
+                    .background(.ultraThickMaterial)
+                    .cornerRadius(25)
+                    .padding(.leading, 20)
+                    .padding(.trailing, 10)
+                }
+            }
+            
+            
+            Button(action: {expandUVIndexButton.toggle()}) {
+                if expandUVIndexButton {
+                    VStack (alignment: .leading) {
+                        HStack {
+                            Image(systemName: "sun.min")
+                                .padding(.trailing, 5)
+                            Text("\(viewModel.uvIndex)")
+                        }
+                        Text(viewModel.uvCategory)
+                            .font(.caption)
+                            .foregroundStyle(Color(.systemGray))
+                        Text("Use Sunscreen")
+                            .font(.default)
+                            .foregroundStyle(Color(.systemGray))
+                    }
+                    .fontWeight(.medium)
+                    .padding(.vertical, 15)
+                    .padding(.leading, 20)
+                    .padding(.trailing, 30)
+                    .background(.ultraThickMaterial)
+                    .cornerRadius(20)
+                    .padding(.leading, 10)
+                    
+                } else {
+                    HStack {
+                        Image(systemName: "sun.min")
+                            .padding(.trailing, 5)
+                        Text("\(viewModel.uvIndex)")
+                    }
+                    .fontWeight(.medium)
+                    .padding(.vertical, 15)
+                    .padding(.horizontal, 20)
+                    .background(.ultraThickMaterial)
+                    .cornerRadius(25)
+                    .padding(.leading, 10)
+                }
+            }
+        }
+        .foregroundStyle(Color(.black))
     }
 }
 

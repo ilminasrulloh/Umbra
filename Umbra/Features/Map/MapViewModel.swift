@@ -9,52 +9,36 @@ import SwiftUI
 import Combine
 import MapKit
 import WeatherKit
+import Observation
 
-@Observable()
-class UserLocationManager: NSObject, CLLocationManagerDelegate {
-    var userLocation: CLLocation?
-    var userAuthorizationStatus: CLAuthorizationStatus = .notDetermined
+@Observable
+class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
+    var locationManager = LocationManager()
     
-    private let manager = CLLocationManager()
-    
-    override init() {
-        super.init()
-        manager.delegate = self
-        manager.desiredAccuracy = kCLLocationAccuracyBest
-    }
-    
-    func RequestUserLocation(){
-        manager.requestWhenInUseAuthorization()
-    }
-    
-    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        guard let location = locations.last else { return }
-        
-        self.userLocation = location
-    }
-    
-    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        self.userAuthorizationStatus = manager.authorizationStatus
-        
-        switch manager.authorizationStatus {
-        case .authorizedWhenInUse, .authorizedAlways:
-            manager.startUpdatingLocation()
-            
-        default:
-            break
-        }
-        
-        
-    }
-}
-
-@Observable()
-class RouteMapManager: NSObject, MKLocalSearchCompleterDelegate {
     var results: [MKLocalSearchCompletion] = []
+    var temperature: String = "27°"
+    var uvIndex: Int = 4
+    var weatherSymbolName: String = "cloud.sun"
+    var feelsLike: String = "Feels like 32°"
+    var uvCategory: String = "Moderate UV Index"
+    
+    let weatherService = WeatherService.shared
     private let completer = MKLocalSearchCompleter()
     
+    var pingWeatherManager = false
+    var userCurrentPosition: MapCameraPosition = .userLocation(fallback: .automatic)
+    var userOriginText = ""
+    var userDestinationText = ""
+    var showDestination = true
+    
+    
+    // Search Completer
     override init() {
         super.init()
+        InitSearchCompleter()
+    }
+    
+    func InitSearchCompleter() {
         completer.delegate = self
         completer.resultTypes = [.address, .pointOfInterest]
     }
@@ -64,7 +48,6 @@ class RouteMapManager: NSObject, MKLocalSearchCompleterDelegate {
             results = []
             return
         }
-        
         completer.queryFragment = query
     }
     
@@ -88,21 +71,13 @@ class RouteMapManager: NSObject, MKLocalSearchCompleterDelegate {
         }
     }
     
-    func clearField(text: Binding<String>) {
-        text.wrappedValue = ""
+    
+    // Get Location
+    func RequestUserLocation() {
+        locationManager.RequestUserLocation()
     }
-}
-
-@Observable()
-class WeatherManager {
-    var temperature: String = "27°"
-    var uvIndex: Int = 4
-    var weatherSymbolName: String = "cloud.sun"
-    var feelsLike: String = "Feels like 32°"
-    var uvCategory: String = "Moderate UV Index"
     
-    let weatherService = WeatherService.shared
-    
+    // Get Current Weather
     func GetCurrentWeather(for location: CLLocation) async {
         do {
             let weather = try await weatherService.weather(for: location)
@@ -118,4 +93,5 @@ class WeatherManager {
             return
         }
     }
+    
 }
