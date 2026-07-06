@@ -10,7 +10,7 @@ import Combine
 import MapKit
 
 struct NavigateView: View {
-    @StateObject private var locationManager = LocationManager()
+    @State private var locationManager = LocationManager()
     @StateObject private var viewModel = NavigateViewModel()
 
     @State private var selectedDestination: CLLocationCoordinate2D?
@@ -19,7 +19,7 @@ struct NavigateView: View {
     @State private var selectedStepIndex: Int = 0
 
     /// Tujuan demo default: Monas, Jakarta.
-    /// Bisa dihilangi kalo sudah ada inputa dari user
+    /// Ganti sesuai lokasi yang kamu pakai untuk testing.
     private let demoDestination = CLLocationCoordinate2D(latitude: -6.1754, longitude: 106.8272)
 
     var body: some View {
@@ -56,34 +56,8 @@ struct NavigateView: View {
             .ignoresSafeArea(edges: .bottom)
 
             // MARK: Area atas — status banner (idle/error) atau instruction carousel (saat navigasi)
-            VStack(spacing: 8) {
-                if let error = viewModel.errorMessage {
-                    statusBanner(text: error, color: .red)
-                }
-                if let locationError = locationManager.lastErrorMessage {
-                    statusBanner(text: locationError, color: .orange)
-                    Button("Buka Pengaturan") {
-                        if let url = URL(string: UIApplication.openSettingsURLString) {
-                            UIApplication.shared.open(url)
-                        }
-                    }
-                    .font(.footnote)
-                } else if locationManager.userAuthorizationStatus == .notDetermined {
-                    statusBanner(text: "Menunggu izin lokasi...", color: .blue)
-                } else if locationManager.location == nil {
-                    statusBanner(text: "Mencari sinyal GPS...", color: .blue)
-                }
-
-                if viewModel.isNavigating, !viewModel.activeSteps.isEmpty {
-                    InstructionCarouselCard(
-                        steps: viewModel.activeSteps,
-                        selectedIndex: $selectedStepIndex,
-                        activeStepIndex: viewModel.currentStepIndex,
-                        liveDistanceToActiveStep: viewModel.distanceToNextStep
-                    )
-                }
-            }
-            .padding(.top, 8)
+            topOverlayArea
+                .padding(.top, 8)
 
             // MARK: Tombol recenter — kiri bawah, tepat di atas card bawah
             VStack {
@@ -125,8 +99,11 @@ struct NavigateView: View {
         .onChange(of: viewModel.currentStepIndex) { _, newValue in
             selectedStepIndex = newValue
         }
-        .onReceive(locationManager.$location.compactMap { $0 }) { newLocation in
-            guard viewModel.isNavigating else { return }
+        // @Observable tidak punya publisher Combine ($properti) seperti @Published dulu.
+        // Solusinya: pantau `timestamp`-nya — nilai ini SELALU berubah tiap ada data baru
+        // dari GPS/kompas, jadi bisa dipakai sebagai "sinyal" kapan harus jalankan side effect.
+        .onChange(of: locationManager.userLocation?.timestamp) { _, _ in
+            guard viewModel.isNavigating, let newLocation = locationManager.userLocation else { return }
 
             viewModel.updateProgress(userLocation: newLocation)
             viewModel.setCameraTarget(
@@ -140,7 +117,7 @@ struct NavigateView: View {
                 }
             }
         }
-        .onReceive(locationManager.$heading.compactMap { $0 }) { _ in
+        .onChange(of: locationManager.heading?.timestamp) { _, _ in
             guard viewModel.isNavigating, let currentLocation = locationManager.userLocation else { return }
             viewModel.setCameraTarget(
                 coordinate: currentLocation.coordinate,
@@ -201,6 +178,54 @@ struct NavigateView: View {
         return "\(Int(meters)) m"
     }
 
+    // MARK: - Top overlay (dipecah jadi beberapa computed property kecil
+    // supaya type-checker tidak menganalisis semuanya sebagai satu expression raksasa)
+
+    @ViewBuilder
+    private var topOverlayArea: some View {
+        VStack(spacing: 8) {
+            permissionAndErrorBanners
+            instructionCarousel
+        }
+    }
+
+    @ViewBuilder
+    private var permissionAndErrorBanners: some View {
+        if let error = viewModel.errorMessage {
+            statusBanner(text: error, color: .red)
+        }
+
+        if let locationError = locationManager.lastErrorMessage {
+            statusBanner(text: locationError, color: .orange)
+            openSettingsButton
+        } else if locationManager.userAuthorizationStatus == .notDetermined {
+            statusBanner(text: "Menunggu izin lokasi...", color: .blue)
+        } else if locationManager.userLocation == nil {
+            statusBanner(text: "Mencari sinyal GPS...", color: .blue)
+        }
+    }
+
+    private var openSettingsButton: some View {
+        Button("Buka Pengaturan") {
+            if let url = URL(string: UIApplication.openSettingsURLString) {
+                UIApplication.shared.open(url)
+            }
+        }
+        .font(.footnote)
+    }
+
+    @ViewBuilder
+    private var instructionCarousel: some View {
+        if viewModel.isNavigating, !viewModel.activeSteps.isEmpty {
+            InstructionCarouselCard(
+                steps: viewModel.activeSteps,
+                selectedIndex: $selectedStepIndex,
+                activeStepIndex: viewModel.currentStepIndex,
+                liveDistanceToActiveStep: viewModel.distanceToNextStep
+            )
+        }
+    }
+
     @ViewBuilder
     private func statusBanner(text: String, color: Color) -> some View {
         Text(text)
@@ -248,5 +273,5 @@ struct NavigateView: View {
 }
 
 #Preview {
-    NavigateView()
+    ContentView()
 }
