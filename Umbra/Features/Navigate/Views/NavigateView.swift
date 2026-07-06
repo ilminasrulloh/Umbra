@@ -21,6 +21,12 @@ struct NavigateView: View {
     /// `viewModel.currentStepIndex` kalau user lagi swipe untuk preview instruksi lain)
     @State private var selectedStepIndex: Int = 0
 
+    /// Penanda supaya `attemptAutoStartNavigation()` cuma benar-benar memulai
+    /// navigasi SEKALI. Tanpa ini, navigasi akan berulang kali dicoba di-restart
+    /// setiap kali `locationManager.userLocation` berubah (yaitu tiap user
+    /// bergerak >5 meter, sesuai `distanceFilter` di LocationManager).
+    @State private var hasAutoStarted = false
+
     /// Tujuan yang dikirim dari MapView (hasil pencarian user)
     let initialDestination: CLLocationCoordinate2D
     let destinationTitle: String
@@ -57,12 +63,12 @@ struct NavigateView: View {
                 .mapControls {
                     MapCompass()
                 }
-                .onTapGesture { screenPoint in
-                    guard !viewModel.isNavigating else { return }
-                    if let coordinate = proxy.convert(screenPoint, from: .local) {
-                        selectedDestination = coordinate
-                    }
-                }
+//                .onTapGesture { screenPoint in
+//                    guard !viewModel.isNavigating else { return }
+//                    if let coordinate = proxy.convert(screenPoint, from: .local) {
+//                        selectedDestination = coordinate
+//                    }
+//                }
             }
             .ignoresSafeArea(edges: .bottom)
 
@@ -81,7 +87,7 @@ struct NavigateView: View {
             }
             .padding(.bottom, 130)
 
-            // MARK: Area bawah — panel mulai navigasi (idle) atau summary card (saat navigasi)
+            // MARK: Area bawah — panel "menyiapkan navigasi" (idle) atau summary card (saat navigasi)
             VStack {
                 Spacer()
                 if viewModel.isNavigating {
@@ -92,6 +98,10 @@ struct NavigateView: View {
                         onEndRoute: {
                             viewModel.stopNavigation()
                             selectedDestination = nil
+                            // Tidak ada lagi tombol "Mulai Navigasi" untuk mulai ulang,
+                            // jadi begitu route diakhiri langsung tutup layar ini
+                            // dan kembali ke MapView, supaya user tidak "terjebak".
+                            dismiss()
                         }
                     )
                 } else {
@@ -101,6 +111,9 @@ struct NavigateView: View {
         }
         .onAppear {
             locationManager.RequestUserLocation()
+            // Kalau lokasi user kebetulan sudah tersedia (misalnya sudah didapat
+            // sebelumnya di MapView), ini langsung memulai navigasi tanpa jeda.
+            attemptAutoStartNavigation()
         }
         .onChange(of: viewModel.isNavigating) { _, isNavigating in
             if isNavigating {
@@ -109,6 +122,12 @@ struct NavigateView: View {
         }
         .onChange(of: viewModel.currentStepIndex) { _, newValue in
             selectedStepIndex = newValue
+        }
+        // Begitu lokasi pertama kali didapat (GPS baru fix) atau berubah,
+        // coba lagi mulai navigasi otomatis. `attemptAutoStartNavigation()`
+        // sendiri yang menjaga supaya ini tidak diulang-ulang.
+        .onChange(of: locationManager.userLocation) { _, _ in
+            attemptAutoStartNavigation()
         }
         // @Observable tidak punya publisher Combine ($properti) seperti @Published dulu.
         // Solusinya: pantau `timestamp`-nya — nilai ini SELALU berubah tiap ada data baru
@@ -134,6 +153,22 @@ struct NavigateView: View {
                 coordinate: currentLocation.coordinate,
                 heading: effectiveNavigationHeading(location: currentLocation)
             )
+        }
+    }
+
+    // MARK: - Auto-start navigasi
+
+    /// Coba mulai navigasi begitu lokasi user tersedia — menggantikan tombol
+    /// "Mulai Navigasi" yang dulu ada di `startNavigationPanel`.
+    private func attemptAutoStartNavigation() {
+        // Sudah pernah dimulai, atau memang sedang navigasi -> tidak perlu apa-apa lagi.
+        guard !hasAutoStarted, !viewModel.isNavigating else { return }
+        // GPS belum dapat fix -> keluar dulu, nanti dicoba lagi lewat onChange di atas.
+        guard let origin = locationManager.userLocation?.coordinate else { return }
+
+        hasAutoStarted = true
+        Task {
+            await viewModel.startNavigation(from: origin, to: currentDestination)
         }
     }
 
@@ -196,7 +231,7 @@ struct NavigateView: View {
     private var topOverlayArea: some View {
         VStack(spacing: 8) {
             HStack {
-                closeButton
+                //closeButton
                 Spacer()
             }
             .padding(.horizontal)
@@ -271,29 +306,17 @@ struct NavigateView: View {
         selectedDestination ?? initialDestination
     }
 
-    // MARK: - Panel "Mulai Navigasi" (ditampilkan sebelum navigasi dimulai)
+    // MARK: - Panel "Menyiapkan Navigasi" (ditampilkan sebentar sebelum navigasi otomatis dimulai)
 
+    /// Dulu berisi tombol "Mulai Navigasi". Sekarang navigasi dimulai otomatis
+    /// lewat `attemptAutoStartNavigation()`, jadi panel ini murni indikator
+    /// bahwa app sedang menunggu GPS/menghitung rute — biasanya cuma tampil sebentar.
     private var startNavigationPanel: some View {
-        VStack(spacing: 12) {
-            Button {
-                guard let origin = locationManager.userLocation?.coordinate else { return }
-                Task {
-                    await viewModel.startNavigation(from: origin, to: currentDestination)
-                }
-            } label: {
-                Label(
-                    selectedDestination == nil ? "Mulai Navigasi ke \(destinationTitle)" : "Mulai Navigasi",
-                    systemImage: "location.fill"
-                )
-                .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(locationManager.userLocation == nil)
-
-            Text("Tap peta untuk mengganti tujuan, atau langsung mulai untuk pakai tujuan yang sudah dipilih.")
-                .font(.caption)
+        HStack(spacing: 12) {
+            ProgressView()
+            Text("Menyiapkan navigasi ke \(destinationTitle)...")
+                .font(.subheadline)
                 .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
         }
         .padding()
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
