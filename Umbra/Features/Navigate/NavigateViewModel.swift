@@ -13,14 +13,15 @@ import Combine
 
 
 @MainActor
-final class NavigateViewModel: ObservableObject {
+@Observable
+final class NavigateViewModel: NSObject {
 
-    @Published var route: MKRoute?
-    @Published var camera: MapCameraPosition = .automatic
-    @Published var currentStepIndex: Int = 0
-    @Published var distanceToNextStep: CLLocationDistance = 0
-    @Published var isNavigating = false
-    @Published var errorMessage: String?
+    var route: MKRoute?
+    var camera: MapCameraPosition = .automatic
+    var currentStepIndex: Int = 0
+    var distanceToNextStep: CLLocationDistance = 0
+    var isNavigating = false
+    var errorMessage: String?
 
     // MARK: - Camera smoothing
 
