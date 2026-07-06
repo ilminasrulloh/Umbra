@@ -25,7 +25,7 @@ class LocationManager: NSObject, CLLocationManagerDelegate {
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyBest
         //manager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
-        manager.activityType = .automotiveNavigation
+        manager.activityType = .fitness
         manager.distanceFilter = 5 // update tiap user bergerak 5 meter
         manager.headingFilter = 1 // update tiap kompas berubah minimal 1°, kurangi noise sensor
     }

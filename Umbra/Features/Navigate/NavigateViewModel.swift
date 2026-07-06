@@ -38,8 +38,8 @@ final class NavigateViewModel: NSObject {
     /// 30x per detik — cukup halus secara visual, tanpa terlalu boros baterai
     private let cameraTickInterval: TimeInterval = 1.0 / 30.0
     /// Porsi jarak ke target yang ditempuh tiap tick. Makin kecil = makin halus tapi makin "lag" mengikuti;
-    /// makin besar = makin responsif tapi makin terasa patah. 0.15–0.2 biasanya pas untuk mobil.
-    private let smoothingFactor: Double = 0.15
+    /// makin besar = makin responsif tapi makin terasa patah. 0.12–0.15 biasanya pas untuk jalan kaki.
+    private let smoothingFactor: Double = 0.12
 
     /// Instruksi yang benar-benar punya teks (step pertama biasanya kosong)
     var activeSteps: [MKRoute.Step] {
@@ -88,7 +88,7 @@ final class NavigateViewModel: NSObject {
         let request = MKDirections.Request()
         request.source = MKMapItem(placemark: MKPlacemark(coordinate: origin))
         request.destination = MKMapItem(placemark: MKPlacemark(coordinate: destination))
-        request.transportType = .automobile
+        request.transportType = .walking
         request.requestsAlternateRoutes = false
 
         do {
@@ -186,9 +186,9 @@ final class NavigateViewModel: NSObject {
         camera = .camera(
             MapCamera(
                 centerCoordinate: coordinate,
-                distance: 600,
+                distance: 300,
                 heading: displayedHeading,
-                pitch: 60
+                pitch: 45
             )
         )
     }
