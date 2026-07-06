@@ -43,8 +43,6 @@ class UserLocationManager: NSObject, CLLocationManagerDelegate {
         default:
             break
         }
-        
-        
     }
 }
 
