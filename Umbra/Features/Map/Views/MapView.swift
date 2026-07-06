@@ -167,6 +167,7 @@ struct BottomPanelSheetView: View {
     @Binding var routeMapManager: RouteMapManager
     @Binding var showDestination: Bool
     @State private var expandDestinationInformation: MKLocalSearchCompletion? = nil
+    @State private var firstResult: MKLocalSearchCompletion? = nil
     
     var focusedField: FocusState<Field?>.Binding
     var isExtended: Bool { currentPresentationDetents == .large}
@@ -242,12 +243,7 @@ struct BottomPanelSheetView: View {
                             ForEach(routeMapManager.results, id: \.self) { result in
                                 LocationSuggestionView(
                                     result: result,
-                                    expandDestinationInformation: expandDestinationInformation == result,
-                                    onTap: {
-                                        withAnimation {
-                                            expandDestinationInformation = (expandDestinationInformation == result) ? nil : result
-                                        }
-                                    }
+                                    routeMapManager: routeMapManager
                                 )
                                 
                             }
@@ -262,13 +258,13 @@ struct BottomPanelSheetView: View {
 
 struct LocationSuggestionView: View {
     var result: MKLocalSearchCompletion
-    var expandDestinationInformation: Bool
-    var onTap: () -> Void
-    //    @Binding var routeMapManager: RouteMapManager
+    var routeMapManager: RouteMapManager
     
     var body: some View {
         
-        Button(action: onTap){
+        Button {
+            
+        } label : {
             VStack (alignment: .leading, spacing: 2){
                 HStack (spacing: 2){
                     Circle()
@@ -293,7 +289,7 @@ struct LocationSuggestionView: View {
                     }
                 }
                 
-                if expandDestinationInformation  {
+                if routeMapManager.results.first == result  {
                     Button {
                     
                     } label  : {
@@ -320,7 +316,7 @@ struct LocationSuggestionView: View {
             .background(Color(.systemGray6))
         }
         .cornerRadius(20)
-        .padding(.vertical, expandDestinationInformation ? 8 : 0)
+        .padding(.bottom, routeMapManager.results.first == result ? 8 : 0)
         .padding(.horizontal, 30)
     }
 }
