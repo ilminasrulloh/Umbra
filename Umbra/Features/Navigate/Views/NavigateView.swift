@@ -10,17 +10,30 @@ import Combine
 import MapKit
 
 struct NavigateView: View {
-    @State private var locationManager = LocationManager()
+    /// Di-inject dari MapView supaya tidak membuat CLLocationManager baru
+    /// (menghindari minta izin lokasi & GPS fix dua kali).
+    let locationManager: LocationManager
     @State private var viewModel = NavigateViewModel()
+    @Environment(\.dismiss) private var dismiss
 
     @State private var selectedDestination: CLLocationCoordinate2D?
     /// Index instruksi yang sedang ditampilkan di carousel (bisa berbeda dari
     /// `viewModel.currentStepIndex` kalau user lagi swipe untuk preview instruksi lain)
     @State private var selectedStepIndex: Int = 0
 
-    /// Tujuan demo default: Monas, Jakarta.
-    /// Bisa dihapus kalo udah fix
-    private let demoDestination = CLLocationCoordinate2D(latitude: -6.1754, longitude: 106.8272)
+    /// Tujuan yang dikirim dari MapView (hasil pencarian user)
+    let initialDestination: CLLocationCoordinate2D
+    let destinationTitle: String
+
+    init(
+        locationManager: LocationManager,
+        destination: CLLocationCoordinate2D,
+        destinationTitle: String = "Tujuan"
+    ) {
+        self.locationManager = locationManager
+        self.initialDestination = destination
+        self.destinationTitle = destinationTitle
+    }
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -38,10 +51,8 @@ struct NavigateView: View {
                             .stroke(.blue, lineWidth: 6)
                     }
 
-                    if let destination = currentDestination {
-                        Marker("Tujuan", coordinate: destination)
-                            .tint(.red)
-                    }
+                    Marker(destinationTitle, coordinate: currentDestination)
+                        .tint(.red)
                 }
                 .mapControls {
                     MapCompass()
@@ -113,7 +124,7 @@ struct NavigateView: View {
 
             if viewModel.isOffRoute(newLocation) {
                 Task {
-                    await viewModel.calculateRoute(from: newLocation.coordinate, to: currentDestination ?? demoDestination)
+                    await viewModel.calculateRoute(from: newLocation.coordinate, to: currentDestination)
                 }
             }
         }
@@ -184,8 +195,27 @@ struct NavigateView: View {
     @ViewBuilder
     private var topOverlayArea: some View {
         VStack(spacing: 8) {
+            HStack {
+                closeButton
+                Spacer()
+            }
+            .padding(.horizontal)
+
             permissionAndErrorBanners
             instructionCarousel
+        }
+    }
+
+    private var closeButton: some View {
+        Button {
+            dismiss()
+        } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(.primary)
+                .padding(10)
+                .background(.regularMaterial, in: Circle())
+                .shadow(color: .black.opacity(0.15), radius: 3)
         }
     }
 
@@ -237,8 +267,8 @@ struct NavigateView: View {
             .padding(.horizontal)
     }
 
-    private var currentDestination: CLLocationCoordinate2D? {
-        selectedDestination ?? (viewModel.isNavigating ? demoDestination : nil)
+    private var currentDestination: CLLocationCoordinate2D {
+        selectedDestination ?? initialDestination
     }
 
     // MARK: - Panel "Mulai Navigasi" (ditampilkan sebelum navigasi dimulai)
@@ -247,13 +277,12 @@ struct NavigateView: View {
         VStack(spacing: 12) {
             Button {
                 guard let origin = locationManager.userLocation?.coordinate else { return }
-                let destination = selectedDestination ?? demoDestination
                 Task {
-                    await viewModel.startNavigation(from: origin, to: destination)
+                    await viewModel.startNavigation(from: origin, to: currentDestination)
                 }
             } label: {
                 Label(
-                    selectedDestination == nil ? "Mulai Navigasi ke Monas (demo)" : "Mulai Navigasi",
+                    selectedDestination == nil ? "Mulai Navigasi ke \(destinationTitle)" : "Mulai Navigasi",
                     systemImage: "location.fill"
                 )
                 .frame(maxWidth: .infinity)
@@ -261,7 +290,7 @@ struct NavigateView: View {
             .buttonStyle(.borderedProminent)
             .disabled(locationManager.userLocation == nil)
 
-            Text("Tap peta untuk memilih tujuan, atau langsung mulai untuk pakai tujuan demo.")
+            Text("Tap peta untuk mengganti tujuan, atau langsung mulai untuk pakai tujuan yang sudah dipilih.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -273,5 +302,9 @@ struct NavigateView: View {
 }
 
 #Preview {
-    ContentView()
+    NavigateView(
+        locationManager: LocationManager(),
+        destination: CLLocationCoordinate2D(latitude: -6.1754, longitude: 106.8272),
+        destinationTitle: "Monas"
+    )
 }
