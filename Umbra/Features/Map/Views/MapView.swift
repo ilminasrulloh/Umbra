@@ -227,7 +227,7 @@ struct LocationSuggestionView: View {
 /// The speech-bubble style callout pointing at the route on the map.
 private struct RouteCalloutBubble: View {
     let option: RouteOption
-
+    
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "chart.bar.fill")
@@ -244,7 +244,8 @@ private struct RouteCalloutBubble: View {
         .padding(14)
         .background(Color.accentColor)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-      
+    }
+}
 struct weatherAndUVIndexView: View {
     @Bindable var viewModel: MapViewModel
     @Binding var expandUVIndexButton: Bool

@@ -6,16 +6,6 @@
 //
 
 import SwiftUI
-
-/// The "Directions" bottom sheet: drag handle, header, origin/destination stack,
-/// optional route legend, and (when expanded) the list of reusable RouteOptionCards.
-///
-/// CHANGED for smooth drag:
-/// - The sheet's HEIGHT now tracks the finger 1:1 during the drag via
-///   `@GestureState dragTranslation` (no lag, no separate "offset then snap").
-/// - `collapsedHeight` / `expandedHeight` are passed in from the parent so the
-///   parent can compute `expandedHeight` from the actual screen size
-///   (near-full-screen) instead of a hardcoded value.
 struct DirectionsSheet: View {
     let originTitle: String
     let destinationTitle: String
