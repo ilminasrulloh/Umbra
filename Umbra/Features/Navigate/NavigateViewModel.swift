@@ -11,7 +11,6 @@ import _MapKit_SwiftUI
 import MapKit
 import Combine
 
-
 @MainActor
 @Observable
 final class NavigateViewModel: NSObject {
@@ -66,23 +65,6 @@ final class NavigateViewModel: NSObject {
     var estimatedArrivalDate: Date {
         Date().addingTimeInterval(remainingTravelTime)
     }
-
-    // MARK: - Camera smoothing
-    /// Nilai "sumber kebenaran" dari GPS/kompas — bisa datang tidak teratur & noisy
-    private var targetCoordinate: CLLocationCoordinate2D?
-    private var targetHeading: CLLocationDirection = 0
-
-    /// Nilai yang benar-benar dipakai kamera — bergerak sedikit demi sedikit menuju target
-    /// tiap tick, bukan langsung "melompat". Inilah yang bikin gerakannya halus.
-    private var displayedCoordinate: CLLocationCoordinate2D?
-    private var displayedHeading: CLLocationDirection = 0
-
-    private var cameraTimer: AnyCancellable?
-    /// 30x per detik — cukup halus secara visual, tanpa terlalu boros baterai
-    private let cameraTickInterval: TimeInterval = 1.0 / 30.0
-    /// Porsi jarak ke target yang ditempuh tiap tick. Makin kecil = makin halus tapi makin "lag" mengikuti;
-    /// makin besar = makin responsif tapi makin terasa patah. 0.15–0.2 biasanya pas untuk mobil.
-    private let smoothingFactor: Double = 0.15
     
     func startNavigation(from origin: CLLocationCoordinate2D, to destination: CLLocationCoordinate2D) async {
         await calculateRoute(from: origin, to: destination)
