@@ -9,6 +9,7 @@ import SwiftUI
 import Combine
 import MapKit
 import WeatherKit
+import CoreLocation
 
 enum Field: Hashable {
     case origin
@@ -27,24 +28,14 @@ struct MapView: View {
     @State var expandWeatherButton = false
     @State var showBottomPanelSheet = true
     @State var currentPresentationDetents: PresentationDetent = .fraction(0.1)
-
     @FocusState var clickedTextField: Field?
-
-    // NEW: drives which "page" of the directions flow is showing.
-    // This was declared before but never actually used anywhere in `body`.
+    
     @State private var directionsSheetState: DirectionsSheetState = .hidden
-
-    // NEW: sample route data for the sheet. Swap this for real data from
-    // viewModel once you have route-fetching wired up.
     @State private var options = RouteOption.sample
-
+    
     private let collapsedSheetHeight: CGFloat = 260
-
+    
     var body: some View {
-        // NEW: wrapped in GeometryReader (for expandedHeight) + ZStack
-        // (so DirectionsSheet/RouteCalloutBubble can render ON TOP of the map).
-        // Previously `body` had no ZStack at all, so there was nowhere for the
-        // sheet to even appear.
         GeometryReader { geo in
             ZStack(alignment: .bottom) {
                 Map(position: $viewModel.userCurrentPosition) {
@@ -60,7 +51,7 @@ struct MapView: View {
                             await viewModel.GetCurrentWeather(for: location)
                         }
                     }
-
+                    
                 }
                 .sheet(isPresented: $showBottomPanelSheet) {
                     BottomPanelSheetView(
@@ -68,8 +59,6 @@ struct MapView: View {
                         currentPresentationDetents: $currentPresentationDetents,
                         focusedField: $clickedTextField,
                         onSeeRoutes: {
-                            // Gambar 1 -> Gambar 2: sembunyikan search sheet,
-                            // tampilkan Directions sheet dalam mode collapsed.
                             withAnimation(.spring(response: 0.35, dampingFraction: 0.9)) {
                                 showBottomPanelSheet = false
                                 directionsSheetState = .collapsed
@@ -89,7 +78,6 @@ struct MapView: View {
                     )
                 }
 
-                // NEW: callout bubble, only shown once we've entered the directions flow.
                 if directionsSheetState != .hidden, let recommended = options.first(where: { $0.isRecommended }) {
                     VStack {
                         Spacer()
@@ -98,8 +86,7 @@ struct MapView: View {
                             .padding(.bottom, 12)
                     }
                 }
-
-                // NEW: the DirectionsSheet itself. This block did not exist before.
+            
                 if directionsSheetState != .hidden {
                     VStack {
                         Spacer()
@@ -150,11 +137,11 @@ struct BottomPanelSheetView: View {
     @Bindable var viewModel: MapViewModel
     @Binding var currentPresentationDetents: PresentationDetent
     var focusedField: FocusState<Field?>.Binding
-    /// NEW: called when the user taps "See Routes" on a suggestion.
+    /// called when the user taps "See Routes" on a suggestion.
     var onSeeRoutes: () -> Void
-
+    
     var isExtended: Bool { currentPresentationDetents == .large }
-
+    
     var body: some View {
         VStack(alignment: .leading) {
             HStack {
@@ -167,7 +154,7 @@ struct BottomPanelSheetView: View {
                             if viewModel.showDestination {
                                 viewModel.SearchLocation(query: newUserDestination)
                             }
-
+                            
                         }
                         .overlay {
                             if !isExtended {
@@ -182,8 +169,8 @@ struct BottomPanelSheetView: View {
                                     }
                             }
                         }
-
-
+                    
+                    
                     if isExtended && !(viewModel.userDestinationText).isEmpty {
                         Button(action: {
                             viewModel.userDestinationText = ""
@@ -198,7 +185,7 @@ struct BottomPanelSheetView: View {
                 .frame(maxWidth: isExtended ? .infinity : 350)
                 .background(Color(.tertiarySystemFill))
                 .cornerRadius(30)
-
+                
                 if isExtended {
                     Button(action: {
                         focusedField.wrappedValue = nil
@@ -209,18 +196,18 @@ struct BottomPanelSheetView: View {
                             .fontWeight(.light)
                             .symbolRenderingMode(.palette)
                             .foregroundStyle(Color(.black), Color(.systemGray3))
-
+                        
                     }
                 }
             }
             .padding(isExtended ? 20 : 0)
-
+            
             if isExtended {
                 if viewModel.userDestinationText.isEmpty {
                     Text("Nearby")
                         .fontWeight(.medium)
                         .padding(.leading, 20)
-
+                    
                     Spacer()
                 } else {
                     ScrollView {
@@ -231,7 +218,7 @@ struct BottomPanelSheetView: View {
                                     result: result,
                                     onSeeRoutes: onSeeRoutes
                                 )
-
+                                
                             }
                         }
                     }
@@ -244,13 +231,14 @@ struct BottomPanelSheetView: View {
 
 struct LocationSuggestionView: View {
     @Bindable var viewModel: MapViewModel
+    @State private var distanceText: String = ""
     var result: MKLocalSearchCompletion
-    /// NEW: called when "See Routes" is tapped for this suggestion.
+    /// called when "See Routes" is tapped for this suggestion.
     var onSeeRoutes: () -> Void
-
+    
     var body: some View {
         Button {
-
+            
         } label: {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 2) {
@@ -263,19 +251,23 @@ struct LocationSuggestionView: View {
                                 .font(.system(size: 14))
                         )
                         .padding(.trailing, 20)
-
+                    
                     VStack(alignment: .leading) {
                         Text(result.title)
                             .foregroundStyle(Color(.black))
                         HStack {
-                            Text("Distance")
+                            Text(distanceText)
+                                .layoutPriority(1)
                             Text("•")
-                            Text("Alamat")
+                            Text(result.subtitle)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
                         }
                         .foregroundStyle(Color(.systemGray2))
+                        .font(.subheadline)
                     }
                 }
-
+                
                 if viewModel.results.first == result {
                     Button(action: onSeeRoutes) {
                         Text("See Routes")
@@ -290,7 +282,7 @@ struct LocationSuggestionView: View {
                     .padding(.top, 8)
                     .padding(.bottom, 4)
                 }
-
+                
                 Divider()
                     .padding(.top, 10)
             }
@@ -302,13 +294,16 @@ struct LocationSuggestionView: View {
         .cornerRadius(20)
         .padding(.bottom, viewModel.results.first == result ? 8 : 0)
         .padding(.horizontal, 30)
+        .task(id: ObjectIdentifier(result)){
+            distanceText = await viewModel.resolveDistance(for: result)
+        }
     }
 }
 
 /// The speech-bubble style callout pointing at the route on the map.
 private struct RouteCalloutBubble: View {
     let option: RouteOption
-
+    
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "chart.bar.fill")
@@ -331,7 +326,7 @@ struct weatherAndUVIndexView: View {
     @Bindable var viewModel: MapViewModel
     @Binding var expandUVIndexButton: Bool
     @Binding var expandWeatherButton: Bool
-
+    
     var body: some View {
         HStack(alignment: .top) {
             Button(action: { expandWeatherButton.toggle() }) {
@@ -353,7 +348,7 @@ struct weatherAndUVIndexView: View {
                     .cornerRadius(20)
                     .padding(.leading, 20)
                     .padding(.trailing, 10)
-
+                    
                 } else {
                     HStack {
                         Image(systemName: viewModel.weatherSymbolName)
@@ -369,8 +364,8 @@ struct weatherAndUVIndexView: View {
                     .padding(.trailing, 10)
                 }
             }
-
-
+            
+            
             Button(action: { expandUVIndexButton.toggle() }) {
                 if expandUVIndexButton {
                     VStack(alignment: .leading) {
@@ -393,7 +388,7 @@ struct weatherAndUVIndexView: View {
                     .background(.ultraThickMaterial)
                     .cornerRadius(20)
                     .padding(.leading, 10)
-
+                    
                 } else {
                     HStack {
                         Image(systemName: "sun.min")

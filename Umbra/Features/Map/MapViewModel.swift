@@ -64,13 +64,12 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
         MKLocalSearch(request: request).start { response, _ in
             guard let coordinate = response?.mapItems.first?.placemark.coordinate else { return }
             
-//            Task { @MainActor in
-//                await assignCoordinate(coordinate, to: activeField, title: completion.title)
-//            }
+            //            Task { @MainActor in
+            //                await assignCoordinate(coordinate, to: activeField, title: completion.title)
+            //            }
             
         }
     }
-    
     
     // Get Location
     func RequestUserLocation() {
@@ -94,4 +93,30 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
         }
     }
     
+    /// calculate Distance
+    
+    func resolveDistance(for completion: MKLocalSearchCompletion) async -> String {
+        guard let userLocation = locationManager.userLocation else { return "—" }
+        
+        let request = MKLocalSearch.Request(completion: completion)
+        let search = MKLocalSearch(request: request)
+        
+        do {
+            let response = try await search.start()
+            guard let destination = response.mapItems.first?.placemark.location else { return "—" }
+            let meters = userLocation.distance(from: destination)
+            return formattedDistance(meters)
+            
+        } catch {
+            return "—"
+        }
+    }
+    
+    private func formattedDistance(_ meters: CLLocationDistance) -> String {
+        if meters < 1000 {
+            return "\(Int(meters)) m"
+        } else {
+            return String(format: "%.1f km", meters / 1000)
+        }
+    }
 }
