@@ -67,6 +67,23 @@ final class NavigateViewModel: NSObject {
         Date().addingTimeInterval(remainingTravelTime)
     }
 
+    // MARK: - Camera smoothing
+    /// Nilai "sumber kebenaran" dari GPS/kompas — bisa datang tidak teratur & noisy
+    private var targetCoordinate: CLLocationCoordinate2D?
+    private var targetHeading: CLLocationDirection = 0
+
+    /// Nilai yang benar-benar dipakai kamera — bergerak sedikit demi sedikit menuju target
+    /// tiap tick, bukan langsung "melompat". Inilah yang bikin gerakannya halus.
+    private var displayedCoordinate: CLLocationCoordinate2D?
+    private var displayedHeading: CLLocationDirection = 0
+
+    private var cameraTimer: AnyCancellable?
+    /// 30x per detik — cukup halus secara visual, tanpa terlalu boros baterai
+    private let cameraTickInterval: TimeInterval = 1.0 / 30.0
+    /// Porsi jarak ke target yang ditempuh tiap tick. Makin kecil = makin halus tapi makin "lag" mengikuti;
+    /// makin besar = makin responsif tapi makin terasa patah. 0.15–0.2 biasanya pas untuk mobil.
+    private let smoothingFactor: Double = 0.15
+    
     func startNavigation(from origin: CLLocationCoordinate2D, to destination: CLLocationCoordinate2D) async {
         await calculateRoute(from: origin, to: destination)
         if route != nil {
@@ -149,8 +166,28 @@ final class NavigateViewModel: NSObject {
         displayedHeading = heading
         applyCamera()
     }
+    
+    /// Cek apakah user sudah melenceng dari garis rute lebih dari threshold (meter)
+    func isOffRoute(_ location: CLLocation, threshold: CLLocationDistance = 50) -> Bool {
+        guard let route else { return false }
+        let polyline = route.polyline
+        guard polyline.pointCount > 1 else { return false }
 
-    private func startCameraLoop() {
+        let userPoint = MKMapPoint(location.coordinate)
+        let points = polyline.points()
+
+        var minDistance = Double.greatestFiniteMagnitude
+        for i in 0..<(polyline.pointCount - 1) {
+            let d = distanceFromPoint(userPoint, toSegment: points[i], and: points[i + 1])
+            minDistance = min(minDistance, d)
+        }
+        return minDistance > threshold
+    }
+    
+}
+
+private extension NavigateViewModel {
+    func startCameraLoop() {
         stopCameraLoop()
         cameraTimer = Timer.publish(every: cameraTickInterval, on: .main, in: .common)
             .autoconnect()
@@ -159,14 +196,14 @@ final class NavigateViewModel: NSObject {
             }
     }
 
-    private func stopCameraLoop() {
+    func stopCameraLoop() {
         cameraTimer?.cancel()
         cameraTimer = nil
     }
 
     /// Satu langkah interpolasi: gerakkan `displayed...` sedikit lebih dekat ke `target...`.
     /// Dipanggil terus-menerus di frame rate tetap selama navigasi berjalan.
-    private func tickCamera() {
+    func tickCamera() {
         guard let target = targetCoordinate, let current = displayedCoordinate else { return }
 
         let newLat = current.latitude + (target.latitude - current.latitude) * smoothingFactor
@@ -178,7 +215,7 @@ final class NavigateViewModel: NSObject {
         applyCamera()
     }
 
-    private func applyCamera() {
+    func applyCamera() {
         guard let coordinate = displayedCoordinate else { return }
         // Set langsung TANPA withAnimation — animasinya sudah "dibuat" secara manual
         // lewat interpolasi tiap tick di atas. Kalau dibungkus withAnimation lagi,
@@ -196,7 +233,7 @@ final class NavigateViewModel: NSObject {
     /// Interpolasi sudut yang menangani wraparound 0°/360° dengan benar,
     /// supaya kamera selalu berputar lewat jalur terpendek (bukan muter jauh
     /// saat heading lompat dari 359° ke 1°, misalnya).
-    private static func lerpAngle(from current: CLLocationDirection, to target: CLLocationDirection, factor: Double) -> CLLocationDirection {
+    static func lerpAngle(from current: CLLocationDirection, to target: CLLocationDirection, factor: Double) -> CLLocationDirection {
         var delta = (target - current).truncatingRemainder(dividingBy: 360)
         if delta > 180 { delta -= 360 }
         if delta < -180 { delta += 360 }
@@ -206,25 +243,8 @@ final class NavigateViewModel: NSObject {
         return result
     }
 
-    /// Cek apakah user sudah melenceng dari garis rute lebih dari threshold (meter)
-    func isOffRoute(_ location: CLLocation, threshold: CLLocationDistance = 50) -> Bool {
-        guard let route else { return false }
-        let polyline = route.polyline
-        guard polyline.pointCount > 1 else { return false }
-
-        let userPoint = MKMapPoint(location.coordinate)
-        let points = polyline.points()
-
-        var minDistance = Double.greatestFiniteMagnitude
-        for i in 0..<(polyline.pointCount - 1) {
-            let d = distanceFromPoint(userPoint, toSegment: points[i], and: points[i + 1])
-            minDistance = min(minDistance, d)
-        }
-        return minDistance > threshold
-    }
-
     /// Jarak titik ke segmen garis (proyeksi tegak lurus, di-clamp ke ujung segmen)
-    private func distanceFromPoint(_ point: MKMapPoint, toSegment a: MKMapPoint, and b: MKMapPoint) -> Double {
+    func distanceFromPoint(_ point: MKMapPoint, toSegment a: MKMapPoint, and b: MKMapPoint) -> Double {
         let dx = b.x - a.x
         let dy = b.y - a.y
 
@@ -238,4 +258,3 @@ final class NavigateViewModel: NSObject {
         return point.distance(to: projected)
     }
 }
-
