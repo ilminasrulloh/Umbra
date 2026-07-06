@@ -27,42 +27,121 @@ struct MapView: View {
     @State var expandWeatherButton = false
     @State var showBottomPanelSheet = true
     @State var currentPresentationDetents: PresentationDetent = .fraction(0.1)
-    
+
     @FocusState var clickedTextField: Field?
-    
+
+    // NEW: drives which "page" of the directions flow is showing.
+    // This was declared before but never actually used anywhere in `body`.
+    @State private var directionsSheetState: DirectionsSheetState = .hidden
+
+    // NEW: sample route data for the sheet. Swap this for real data from
+    // viewModel once you have route-fetching wired up.
+    @State private var options = RouteOption.sample
+
+    private let collapsedSheetHeight: CGFloat = 260
+
     var body: some View {
-        Map(position: $viewModel.userCurrentPosition) {
-            UserAnnotation()
-        }
-        .ignoresSafeArea()
-        .onAppear {
-            viewModel.RequestUserLocation()
-        }
-        .onChange(of: viewModel.locationManager.userLocation) { oldValue, newLocation in
-            if let location = newLocation, viewModel.pingWeatherManager {
-                Task {
-                    await viewModel.GetCurrentWeather(for: location)
+        // NEW: wrapped in GeometryReader (for expandedHeight) + ZStack
+        // (so DirectionsSheet/RouteCalloutBubble can render ON TOP of the map).
+        // Previously `body` had no ZStack at all, so there was nowhere for the
+        // sheet to even appear.
+        GeometryReader { geo in
+            ZStack(alignment: .bottom) {
+                Map(position: $viewModel.userCurrentPosition) {
+                    UserAnnotation()
+                }
+                .ignoresSafeArea()
+                .onAppear {
+                    viewModel.RequestUserLocation()
+                }
+                .onChange(of: viewModel.locationManager.userLocation) { oldValue, newLocation in
+                    if let location = newLocation, viewModel.pingWeatherManager {
+                        Task {
+                            await viewModel.GetCurrentWeather(for: location)
+                        }
+                    }
+
+                }
+                .sheet(isPresented: $showBottomPanelSheet) {
+                    BottomPanelSheetView(
+                        viewModel: viewModel,
+                        currentPresentationDetents: $currentPresentationDetents,
+                        focusedField: $clickedTextField,
+                        onSeeRoutes: {
+                            // Gambar 1 -> Gambar 2: sembunyikan search sheet,
+                            // tampilkan Directions sheet dalam mode collapsed.
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.9)) {
+                                showBottomPanelSheet = false
+                                directionsSheetState = .collapsed
+                            }
+                        }
+                    )
+                    .interactiveDismissDisabled()
+                    .presentationDetents([.fraction(0.1), .large], selection: $currentPresentationDetents)
+                    .presentationDragIndicator(.visible)
+                    .presentationBackgroundInteraction(.enabled)
+                }
+                .overlay(alignment: .topLeading) {
+                    weatherAndUVIndexView(
+                        viewModel: viewModel,
+                        expandUVIndexButton: $expandUVIndexButton,
+                        expandWeatherButton: $expandWeatherButton
+                    )
+                }
+
+                // NEW: callout bubble, only shown once we've entered the directions flow.
+                if directionsSheetState != .hidden, let recommended = options.first(where: { $0.isRecommended }) {
+                    VStack {
+                        Spacer()
+                        RouteCalloutBubble(option: recommended)
+                            .padding(.horizontal, 24)
+                            .padding(.bottom, 12)
+                    }
+                }
+
+                // NEW: the DirectionsSheet itself. This block did not exist before.
+                if directionsSheetState != .hidden {
+                    VStack {
+                        Spacer()
+                        DirectionsSheet(
+                            originTitle: "My Location",
+                            destinationTitle: "The Breeze",
+                            options: options,
+                            showLegend: true,
+                            isExpanded: directionsSheetState == .expanded,
+                            collapsedHeight: collapsedSheetHeight,
+                            expandedHeight: geo.size.height * 0.92,
+                            onClose: {
+                                withAnimation(.spring(response: 0.35, dampingFraction: 0.9)) {
+                                    if directionsSheetState == .expanded {
+                                        directionsSheetState = .collapsed
+                                    } else {
+                                        directionsSheetState = .hidden
+                                        currentPresentationDetents = .fraction(0.1)
+                                        clickedTextField = nil
+                                        showBottomPanelSheet = true
+                                    }
+                                }
+                            },
+                            onExpand: {
+                                withAnimation(.spring(response: 0.35, dampingFraction: 0.9)) {
+                                    directionsSheetState = .expanded
+                                }
+                            },
+                            onCollapse: {
+                                withAnimation(.spring(response: 0.35, dampingFraction: 0.9)) {
+                                    directionsSheetState = .collapsed
+                                }
+                            },
+                            onStart: { print("start \($0.title)") }
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                        .shadow(color: .black.opacity(0.15), radius: 20, y: -4)
+                    }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
-            
-        }
-        .sheet(isPresented: $showBottomPanelSheet) {
-            BottomPanelSheetView(
-                viewModel: viewModel,
-                currentPresentationDetents: $currentPresentationDetents,
-                focusedField: $clickedTextField
-            )
-            .interactiveDismissDisabled()
-            .presentationDetents([.fraction(0.1), .large], selection: $currentPresentationDetents)
-            .presentationDragIndicator(.visible)
-            .presentationBackgroundInteraction(.enabled)
-        }
-        .overlay(alignment: .topLeading) {
-            weatherAndUVIndexView(
-                viewModel: viewModel,
-                expandUVIndexButton: $expandUVIndexButton,
-                expandWeatherButton: $expandWeatherButton
-            )
+            .ignoresSafeArea()
         }
     }
 }
@@ -71,9 +150,11 @@ struct BottomPanelSheetView: View {
     @Bindable var viewModel: MapViewModel
     @Binding var currentPresentationDetents: PresentationDetent
     var focusedField: FocusState<Field?>.Binding
-    
-    var isExtended: Bool { currentPresentationDetents == .large}
-    
+    /// NEW: called when the user taps "See Routes" on a suggestion.
+    var onSeeRoutes: () -> Void
+
+    var isExtended: Bool { currentPresentationDetents == .large }
+
     var body: some View {
         VStack(alignment: .leading) {
             HStack {
@@ -101,8 +182,8 @@ struct BottomPanelSheetView: View {
                                     }
                             }
                         }
-                    
-                    
+
+
                     if isExtended && !(viewModel.userDestinationText).isEmpty {
                         Button(action: {
                             viewModel.userDestinationText = ""
@@ -143,11 +224,12 @@ struct BottomPanelSheetView: View {
                     Spacer()
                 } else {
                     ScrollView {
-                        VStack (spacing: 0) {
+                        VStack(spacing: 0) {
                             ForEach(viewModel.results, id: \.self) { result in
                                 LocationSuggestionView(
                                     viewModel: viewModel,
-                                    result: result
+                                    result: result,
+                                    onSeeRoutes: onSeeRoutes
                                 )
 
                             }
@@ -163,13 +245,15 @@ struct BottomPanelSheetView: View {
 struct LocationSuggestionView: View {
     @Bindable var viewModel: MapViewModel
     var result: MKLocalSearchCompletion
-    
+    /// NEW: called when "See Routes" is tapped for this suggestion.
+    var onSeeRoutes: () -> Void
+
     var body: some View {
         Button {
-            
-        } label : {
-            VStack (alignment: .leading, spacing: 2){
-                HStack (spacing: 2){
+
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 2) {
                     Circle()
                         .fill(Color(.systemGray4))
                         .frame(width: 40, height: 40)
@@ -191,11 +275,9 @@ struct LocationSuggestionView: View {
                         .foregroundStyle(Color(.systemGray2))
                     }
                 }
-                
-                if viewModel.results.first == result  {
-                    Button {
-                    
-                    } label  : {
+
+                if viewModel.results.first == result {
+                    Button(action: onSeeRoutes) {
                         Text("See Routes")
                             .font(.footnote)
                             .fontWeight(.medium)
@@ -223,11 +305,10 @@ struct LocationSuggestionView: View {
     }
 }
 
-
 /// The speech-bubble style callout pointing at the route on the map.
 private struct RouteCalloutBubble: View {
     let option: RouteOption
-    
+
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "chart.bar.fill")
@@ -250,12 +331,12 @@ struct weatherAndUVIndexView: View {
     @Bindable var viewModel: MapViewModel
     @Binding var expandUVIndexButton: Bool
     @Binding var expandWeatherButton: Bool
-    
+
     var body: some View {
-        HStack (alignment: .top) {
-            Button(action: {expandWeatherButton.toggle()}) {
+        HStack(alignment: .top) {
+            Button(action: { expandWeatherButton.toggle() }) {
                 if expandWeatherButton {
-                    VStack (alignment: .leading) {
+                    VStack(alignment: .leading) {
                         HStack {
                             Image(systemName: viewModel.weatherSymbolName)
                                 .padding(.trailing, 5)
@@ -272,7 +353,7 @@ struct weatherAndUVIndexView: View {
                     .cornerRadius(20)
                     .padding(.leading, 20)
                     .padding(.trailing, 10)
-                    
+
                 } else {
                     HStack {
                         Image(systemName: viewModel.weatherSymbolName)
@@ -288,11 +369,11 @@ struct weatherAndUVIndexView: View {
                     .padding(.trailing, 10)
                 }
             }
-            
-            
-            Button(action: {expandUVIndexButton.toggle()}) {
+
+
+            Button(action: { expandUVIndexButton.toggle() }) {
                 if expandUVIndexButton {
-                    VStack (alignment: .leading) {
+                    VStack(alignment: .leading) {
                         HStack {
                             Image(systemName: "sun.min")
                                 .padding(.trailing, 5)
@@ -302,7 +383,7 @@ struct weatherAndUVIndexView: View {
                             .font(.caption)
                             .foregroundStyle(Color(.systemGray))
                         Text("Use Sunscreen")
-                            .font(.default)
+                            .font(.body)
                             .foregroundStyle(Color(.systemGray))
                     }
                     .fontWeight(.medium)
@@ -312,7 +393,7 @@ struct weatherAndUVIndexView: View {
                     .background(.ultraThickMaterial)
                     .cornerRadius(20)
                     .padding(.leading, 10)
-                    
+
                 } else {
                     HStack {
                         Image(systemName: "sun.min")

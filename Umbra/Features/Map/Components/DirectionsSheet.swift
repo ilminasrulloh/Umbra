@@ -11,36 +11,36 @@ struct DirectionsSheet: View {
     let destinationTitle: String
     let options: [RouteOption]
     var showLegend: Bool = false
-
+    
     /// true = Gambar 3 (full route list), false = Gambar 2 (just origin/destination)
     var isExpanded: Bool
-
+    
     /// Heights for the two resting states. Pass expandedHeight computed from
     /// screen size (e.g. geo.size.height * 0.92) so it's near-full-screen.
     var collapsedHeight: CGFloat
     var expandedHeight: CGFloat
-
+    
     /// X button tapped, or dragged down while already collapsed.
     var onClose: () -> Void
     /// Dragged up past the midpoint while collapsed -> parent switches to expanded.
     var onExpand: () -> Void
     /// Dragged down past the midpoint while expanded -> parent switches to collapsed.
     var onCollapse: () -> Void
-
+    
     var onStart: (RouteOption) -> Void
-
+    
     // Tracks the live drag distance; automatically resets to 0 when the
     // gesture ends, which is what lets the final settle animate smoothly.
     @GestureState private var dragTranslation: CGFloat = 0
-
+    
     private var baseHeight: CGFloat { isExpanded ? expandedHeight : collapsedHeight }
-
+    
     /// The height actually rendered — follows the finger 1:1 while dragging,
     /// clamped so you can't drag past either resting size.
     private var liveHeight: CGFloat {
         min(max(baseHeight - dragTranslation, collapsedHeight), expandedHeight)
     }
-
+    
     var body: some View {
         VStack(spacing: 0) {
             // Drag handle — swipe down to close/collapse, swipe up to expand.
@@ -57,20 +57,28 @@ struct DirectionsSheet: View {
                             state = value.translation.height
                         }
                         .onEnded { value in
-                            let proposed = baseHeight - value.translation.height
-                            let midpoint = (collapsedHeight + expandedHeight) / 2
-                            if proposed > midpoint {
-                                if !isExpanded { onExpand() }
-                            } else {
+                            let translation = value.translation.height
+                            let threshold: CGFloat = 60   // jarak minimum biar dianggap "sengaja" narik
+                            
+                            if translation < -threshold {
+                                // Narik ke ATAS cukup jauh -> expand (kalau belum expanded)
+                                if !isExpanded {
+                                    onExpand()
+                                }
+                                // kalau udah expanded, gak ngapa-ngapain (tetep expanded)
+                            } else if translation > threshold {
+                                // Narik ke BAWAH cukup jauh
                                 if isExpanded {
                                     onCollapse()
                                 } else {
                                     onClose()
                                 }
                             }
+                            // kalau gerakannya kecil (di bawah threshold), gak ada state yang berubah —
+                            // liveHeight otomatis balik ke baseHeight begitu dragTranslation reset ke 0
                         }
                 )
-
+            
             // Header — fixed, does not scroll.
             HStack {
                 Text("Directions")
@@ -79,7 +87,7 @@ struct DirectionsSheet: View {
                 Button(action: onClose) {
                     Image(systemName: "xmark")
                         .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.black)
                         .padding(10)
                         .background(Color(.systemGray5))
                         .clipShape(Circle())
@@ -87,11 +95,11 @@ struct DirectionsSheet: View {
             }
             .padding(.horizontal, 20)
             .padding(.bottom, 16)
-
+            
             // Origin / destination — fixed, does not scroll.
             LocationInputStack(originTitle: originTitle, destinationTitle: destinationTitle)
                 .padding(.horizontal, 20)
-
+            
             // Legend — fixed, does not scroll.
             if showLegend {
                 RouteLegendView()
@@ -99,7 +107,7 @@ struct DirectionsSheet: View {
                     .padding(.top, 20)
                     .padding(.bottom, 20)
             }
-
+            
             // Route options — ONLY this part scrolls, and only shows once expanded.
             if isExpanded {
                 ScrollView {
@@ -131,7 +139,7 @@ struct RouteLegendView: View {
             Spacer()
         }
     }
-
+    
     private func legendItem(color: Color, label: String) -> some View {
         HStack(spacing: 8) {
             Capsule()
