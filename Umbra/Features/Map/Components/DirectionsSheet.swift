@@ -31,7 +31,7 @@ struct DirectionsSheet: View {
     
     // Tracks the live drag distance; automatically resets to 0 when the
     // gesture ends, which is what lets the final settle animate smoothly.
-    @GestureState private var dragTranslation: CGFloat = 0
+    @State private var dragTranslation: CGFloat = 0
     
     private var baseHeight: CGFloat { isExpanded ? expandedHeight : collapsedHeight }
     
@@ -52,9 +52,8 @@ struct DirectionsSheet: View {
                 .contentShape(Rectangle().inset(by: -12)) // bigger hit area
                 .gesture(
                     DragGesture()
-                        .updating($dragTranslation) { value, state, _ in
-                            // Dragging up -> translation.height negative -> height grows.
-                            state = value.translation.height
+                        .onChanged { value in
+                            dragTranslation = value.translation.height
                         }
                         .onEnded { value in
                             let translation = value.translation.height
@@ -74,8 +73,9 @@ struct DirectionsSheet: View {
                                     onClose()
                                 }
                             }
-                            // kalau gerakannya kecil (di bawah threshold), gak ada state yang berubah —
-                            // liveHeight otomatis balik ke baseHeight begitu dragTranslation reset ke 0
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.9)) {
+                                dragTranslation = 0
+                            }
                         }
                 )
             
