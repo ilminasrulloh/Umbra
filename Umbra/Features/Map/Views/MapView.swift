@@ -38,6 +38,12 @@ struct MapView: View {
     // viewModel once you have route-fetching wired up.
     @State private var options = RouteOption.sample
 
+    /// Tujuan yang sudah di-resolve jadi koordinat asli (hasil tap "See Routes")
+    @State private var resolvedDestination: NavigationDestination?
+
+    /// Diisi saat tombol "Start" di DirectionsSheet ditekan — trigger fullScreenCover ke NavigateView
+    @State private var navigateDestination: NavigationDestination?
+
     private let collapsedSheetHeight: CGFloat = 260
 
     var body: some View {
@@ -49,6 +55,16 @@ struct MapView: View {
             ZStack(alignment: .bottom) {
                 Map(position: $viewModel.userCurrentPosition) {
                     UserAnnotation()
+
+                    if let route = viewModel.calculatedRoutes.first {
+                        MapPolyline(route.polyline)
+                            .stroke(.blue, lineWidth: 6)
+                    }
+
+                    if let destination = resolvedDestination {
+                        Marker(destination.title, coordinate: destination.coordinate)
+                            .tint(.red)
+                    }
                 }
                 .ignoresSafeArea()
                 .onAppear {
@@ -67,12 +83,17 @@ struct MapView: View {
                         viewModel: viewModel,
                         currentPresentationDetents: $currentPresentationDetents,
                         focusedField: $clickedTextField,
-                        onSeeRoutes: {
+                        onSeeRoutes: { destination in
                             // Gambar 1 -> Gambar 2: sembunyikan search sheet,
-                            // tampilkan Directions sheet dalam mode collapsed.
+                            // tampilkan Directions sheet dalam mode collapsed,
+                            // lalu hitung rute jalan kaki asli ke tujuan itu.
+                            resolvedDestination = destination
                             withAnimation(.spring(response: 0.35, dampingFraction: 0.9)) {
                                 showBottomPanelSheet = false
                                 directionsSheetState = .collapsed
+                            }
+                            Task {
+                                await viewModel.calculateWalkingRoute(to: destination.coordinate)
                             }
                         }
                     )
@@ -105,7 +126,7 @@ struct MapView: View {
                         Spacer()
                         DirectionsSheet(
                             originTitle: "My Location",
-                            destinationTitle: "The Breeze",
+                            destinationTitle: resolvedDestination?.title ?? "Tujuan",
                             options: options,
                             showLegend: true,
                             isExpanded: directionsSheetState == .expanded,
@@ -120,6 +141,8 @@ struct MapView: View {
                                         currentPresentationDetents = .fraction(0.1)
                                         clickedTextField = nil
                                         showBottomPanelSheet = true
+                                        resolvedDestination = nil
+                                        viewModel.calculatedRoutes = []
                                     }
                                 }
                             },
@@ -133,7 +156,11 @@ struct MapView: View {
                                     directionsSheetState = .collapsed
                                 }
                             },
-                            onStart: { print("start \($0.title)") }
+                            onStart: { _ in
+                                // Rute sudah dilihat user di layar preview — sekarang pindah ke NavigateView
+                                // untuk mulai navigasi langkah-demi-langkah yang sebenarnya.
+                                navigateDestination = resolvedDestination
+                            }
                         )
                         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                         .shadow(color: .black.opacity(0.15), radius: 20, y: -4)
@@ -143,6 +170,13 @@ struct MapView: View {
             }
             .ignoresSafeArea()
         }
+        .fullScreenCover(item: $navigateDestination) { destination in
+            NavigateView(
+                locationManager: viewModel.locationManager,
+                destination: destination.coordinate,
+                destinationTitle: destination.title
+            )
+        }
     }
 }
 
@@ -150,8 +184,8 @@ struct BottomPanelSheetView: View {
     @Bindable var viewModel: MapViewModel
     @Binding var currentPresentationDetents: PresentationDetent
     var focusedField: FocusState<Field?>.Binding
-    /// NEW: called when the user taps "See Routes" on a suggestion.
-    var onSeeRoutes: () -> Void
+    /// NEW: called when the user taps "See Routes" on a suggestion, dengan tujuan yang sudah di-resolve.
+    var onSeeRoutes: (NavigationDestination) -> Void
 
     var isExtended: Bool { currentPresentationDetents == .large }
 
@@ -246,11 +280,11 @@ struct LocationSuggestionView: View {
     @Bindable var viewModel: MapViewModel
     var result: MKLocalSearchCompletion
     /// NEW: called when "See Routes" is tapped for this suggestion.
-    var onSeeRoutes: () -> Void
+    var onSeeRoutes: (NavigationDestination) -> Void
 
     var body: some View {
         Button {
-
+            selectDestination()
         } label: {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 2) {
@@ -277,7 +311,9 @@ struct LocationSuggestionView: View {
                 }
 
                 if viewModel.results.first == result {
-                    Button(action: onSeeRoutes) {
+                    Button {
+                        selectDestination()
+                    } label: {
                         Text("See Routes")
                             .font(.footnote)
                             .fontWeight(.medium)
@@ -302,6 +338,17 @@ struct LocationSuggestionView: View {
         .cornerRadius(20)
         .padding(.bottom, viewModel.results.first == result ? 8 : 0)
         .padding(.horizontal, 30)
+    }
+
+    /// Resolve hasil pencarian jadi koordinat asli lewat MapViewModel,
+    /// lalu teruskan ke onSeeRoutes begitu selesai.
+    private func selectDestination() {
+        Task {
+            await viewModel.MoveToSelectedLocation(completion: result)
+            if let destination = viewModel.pendingNavigationDestination {
+                onSeeRoutes(destination)
+            }
+        }
     }
 }
 

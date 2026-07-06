@@ -11,6 +11,14 @@ import MapKit
 import WeatherKit
 import Observation
 
+/// Tujuan yang dipilih user dari hasil pencarian, dipakai untuk trigger
+/// presentasi `NavigateView` lewat `.fullScreenCover(item:)`.
+struct NavigationDestination: Identifiable {
+    let id = UUID()
+    let coordinate: CLLocationCoordinate2D
+    let title: String
+}
+
 @Observable
 class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
     var locationManager = LocationManager()
@@ -30,6 +38,14 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
     var userOriginText = ""
     var userDestinationText = ""
     var showDestination = true
+    
+    /// Diisi begitu user memilih salah satu hasil pencarian.
+    /// MapView mengamati ini lewat `.fullScreenCover(item:)` untuk pindah ke NavigateView.
+    var pendingNavigationDestination: NavigationDestination?
+    
+    /// Rute jalan kaki asli (hasil MKDirections) dari lokasi user ke tujuan yang dipilih.
+    /// Dipakai untuk menggambar polyline di peta pada layar "preview rute" (DirectionsSheet).
+    var calculatedRoutes: [MKRoute] = []
     
     
     // Search Completer
@@ -59,15 +75,29 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
         results = []
     }
     
-    func MoveToSelectedLocation(completion: MKLocalSearchCompletion) {
+    /// Resolve hasil pencarian (`MKLocalSearchCompletion`) jadi koordinat asli,
+    /// lalu simpan sebagai tujuan yang siap dinavigasikan. Begitu properti ini terisi,
+    /// MapView otomatis pindah ke NavigateView lewat `.fullScreenCover(item:)`.
+    @MainActor
+    func MoveToSelectedLocation(completion: MKLocalSearchCompletion) async {
         let request = MKLocalSearch.Request(completion: completion)
-        MKLocalSearch(request: request).start { response, _ in
-            guard let coordinate = response?.mapItems.first?.placemark.coordinate else { return }
-            
-//            Task { @MainActor in
-//                await assignCoordinate(coordinate, to: activeField, title: completion.title)
-//            }
-            
+        do {
+            let response = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<MKLocalSearch.Response, Error>) in
+                MKLocalSearch(request: request).start { response, error in
+                    if let response {
+                        continuation.resume(returning: response)
+                    } else {
+                        continuation.resume(throwing: error ?? NSError(domain: "MapViewModel", code: -1))
+                    }
+                }
+            }
+            guard let coordinate = response.mapItems.first?.placemark.coordinate else { return }
+            pendingNavigationDestination = NavigationDestination(
+                coordinate: coordinate,
+                title: completion.title
+            )
+        } catch {
+            // Bisa ditambahkan penanganan error (mis. tampilkan alert) kalau diperlukan
         }
     }
     
@@ -75,6 +105,30 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
     // Get Location
     func RequestUserLocation() {
         locationManager.RequestUserLocation()
+    }
+    
+    /// Hitung rute jalan kaki asli dari lokasi user saat ini ke koordinat tujuan.
+    /// Dipanggil setelah user tap "See Routes", supaya layar preview rute
+    /// menampilkan jalur & estimasi yang beneran, bukan data sample.
+    @MainActor
+    func calculateWalkingRoute(to destination: CLLocationCoordinate2D) async {
+        guard let origin = locationManager.userLocation?.coordinate else {
+            calculatedRoutes = []
+            return
+        }
+
+        let request = MKDirections.Request()
+        request.source = MKMapItem(placemark: MKPlacemark(coordinate: origin))
+        request.destination = MKMapItem(placemark: MKPlacemark(coordinate: destination))
+        request.transportType = .walking
+        request.requestsAlternateRoutes = true
+
+        do {
+            let response = try await MKDirections(request: request).calculate()
+            calculatedRoutes = response.routes
+        } catch {
+            calculatedRoutes = []
+        }
     }
     
     // Get Current Weather
