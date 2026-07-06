@@ -15,9 +15,14 @@ enum Field: Hashable {
     case destination
 }
 
+enum DirectionsSheetState: Equatable {
+    case hidden
+    case collapsed
+    case expanded
+}
+
 struct MapView: View {
     @State private var viewModel = MapViewModel()
-    
     @State var expandUVIndexButton = false
     @State var expandWeatherButton = false
     @State var showBottomPanelSheet = true
@@ -70,7 +75,7 @@ struct BottomPanelSheetView: View {
     var isExtended: Bool { currentPresentationDetents == .large}
     
     var body: some View {
-        VStack (alignment: .leading) {
+        VStack(alignment: .leading) {
             HStack {
                 HStack {
                     Image(systemName: "magnifyingglass")
@@ -81,7 +86,7 @@ struct BottomPanelSheetView: View {
                             if viewModel.showDestination {
                                 viewModel.SearchLocation(query: newUserDestination)
                             }
-                            
+
                         }
                         .overlay {
                             if !isExtended {
@@ -112,7 +117,7 @@ struct BottomPanelSheetView: View {
                 .frame(maxWidth: isExtended ? .infinity : 350)
                 .background(Color(.tertiarySystemFill))
                 .cornerRadius(30)
-                
+
                 if isExtended {
                     Button(action: {
                         focusedField.wrappedValue = nil
@@ -123,18 +128,18 @@ struct BottomPanelSheetView: View {
                             .fontWeight(.light)
                             .symbolRenderingMode(.palette)
                             .foregroundStyle(Color(.black), Color(.systemGray3))
-                            
+
                     }
                 }
             }
             .padding(isExtended ? 20 : 0)
-            
+
             if isExtended {
                 if viewModel.userDestinationText.isEmpty {
                     Text("Nearby")
                         .fontWeight(.medium)
                         .padding(.leading, 20)
-                    
+
                     Spacer()
                 } else {
                     ScrollView {
@@ -144,7 +149,7 @@ struct BottomPanelSheetView: View {
                                     viewModel: viewModel,
                                     result: result
                                 )
-                                
+
                             }
                         }
                     }
@@ -174,8 +179,8 @@ struct LocationSuggestionView: View {
                                 .font(.system(size: 14))
                         )
                         .padding(.trailing, 20)
-                    
-                    VStack (alignment: .leading) {
+
+                    VStack(alignment: .leading) {
                         Text(result.title)
                             .foregroundStyle(Color(.black))
                         HStack {
@@ -192,19 +197,18 @@ struct LocationSuggestionView: View {
                     
                     } label  : {
                         Text("See Routes")
-                        .font(.footnote)
-                        .fontWeight(.medium)
-                        .foregroundStyle(Color(.white))
-                        .padding(8)
-                        .frame(maxWidth: .infinity)
-                        .background(Color(.blue))
-                        .cornerRadius(25)
+                            .font(.footnote)
+                            .fontWeight(.medium)
+                            .foregroundStyle(Color(.white))
+                            .padding(8)
+                            .frame(maxWidth: .infinity)
+                            .background(Color(.blue))
+                            .cornerRadius(25)
                     }
-
                     .padding(.top, 8)
                     .padding(.bottom, 4)
                 }
-                
+
                 Divider()
                     .padding(.top, 10)
             }
@@ -219,6 +223,28 @@ struct LocationSuggestionView: View {
     }
 }
 
+
+/// The speech-bubble style callout pointing at the route on the map.
+private struct RouteCalloutBubble: View {
+    let option: RouteOption
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "chart.bar.fill")
+            VStack(alignment: .leading, spacing: 2) {
+                Text(option.title)
+                    .font(.system(size: 15, weight: .bold))
+                Text(option.subtitle)
+                    .font(.system(size: 13))
+                    .opacity(0.85)
+            }
+            Spacer()
+        }
+        .foregroundStyle(.white)
+        .padding(14)
+        .background(Color.accentColor)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+      
 struct weatherAndUVIndexView: View {
     @Bindable var viewModel: MapViewModel
     @Binding var expandUVIndexButton: Bool
