@@ -169,7 +169,7 @@ final class NavigateViewModel: NSObject {
 }
 
 private extension NavigateViewModel {
-    private func startCameraLoop() {
+    func startCameraLoop() {
         stopCameraLoop()
         cameraTimer = Timer.publish(every: cameraTickInterval, on: .main, in: .common)
             .autoconnect()
@@ -178,14 +178,14 @@ private extension NavigateViewModel {
             }
     }
 
-    private func stopCameraLoop() {
+    func stopCameraLoop() {
         cameraTimer?.cancel()
         cameraTimer = nil
     }
 
     /// Satu langkah interpolasi: gerakkan `displayed...` sedikit lebih dekat ke `target...`.
     /// Dipanggil terus-menerus di frame rate tetap selama navigasi berjalan.
-    private func tickCamera() {
+    func tickCamera() {
         guard let target = targetCoordinate, let current = displayedCoordinate else { return }
 
         let newLat = current.latitude + (target.latitude - current.latitude) * smoothingFactor
@@ -197,7 +197,7 @@ private extension NavigateViewModel {
         applyCamera()
     }
 
-    private func applyCamera() {
+    func applyCamera() {
         guard let coordinate = displayedCoordinate else { return }
         // Set langsung TANPA withAnimation — animasinya sudah "dibuat" secara manual
         // lewat interpolasi tiap tick di atas. Kalau dibungkus withAnimation lagi,
@@ -215,7 +215,7 @@ private extension NavigateViewModel {
     /// Interpolasi sudut yang menangani wraparound 0°/360° dengan benar,
     /// supaya kamera selalu berputar lewat jalur terpendek (bukan muter jauh
     /// saat heading lompat dari 359° ke 1°, misalnya).
-    private static func lerpAngle(from current: CLLocationDirection, to target: CLLocationDirection, factor: Double) -> CLLocationDirection {
+    static func lerpAngle(from current: CLLocationDirection, to target: CLLocationDirection, factor: Double) -> CLLocationDirection {
         var delta = (target - current).truncatingRemainder(dividingBy: 360)
         if delta > 180 { delta -= 360 }
         if delta < -180 { delta += 360 }
@@ -226,7 +226,7 @@ private extension NavigateViewModel {
     }
 
     /// Jarak titik ke segmen garis (proyeksi tegak lurus, di-clamp ke ujung segmen)
-    private func distanceFromPoint(_ point: MKMapPoint, toSegment a: MKMapPoint, and b: MKMapPoint) -> Double {
+    func distanceFromPoint(_ point: MKMapPoint, toSegment a: MKMapPoint, and b: MKMapPoint) -> Double {
         let dx = b.x - a.x
         let dy = b.y - a.y
 
