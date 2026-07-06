@@ -20,8 +20,8 @@ struct NavigateView: View {
 
     /// Tujuan demo default: Monas, Jakarta.
     /// Ganti sesuai lokasi yang kamu pakai untuk testing.
-    private let demoDestination = CLLocationCoordinate2D(latitude: -6.1754, longitude: 106.8272)
-
+    private let demoDestination = CLLocationCoordinate2D(latitude: -6.3028, longitude: 106.6520)
+    
     var body: some View {
         ZStack(alignment: .top) {
             MapReader { proxy in
