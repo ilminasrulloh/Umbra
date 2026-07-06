@@ -22,254 +22,69 @@ enum DirectionsSheetState: Equatable {
 }
 
 struct MapView: View {
-    @State private var locationManager = UserLocationManager()
-    @State private var weatherManager = WeatherManager()
-    @State private var routeMapManager = RouteMapManager()
-    @State private var options = RouteOption.sample
-    @State private var expandUVIndexButton = false
-    @State private var expandWeatherButton = false
-    @State private var pingWeatherManager = false
-
-    @State private var showBottomPanelSheet = true
-    @State private var currentPresentationDetents: PresentationDetent = .fraction(0.1)
-
-    @State private var userCurrentPosition: MapCameraPosition = .userLocation(fallback: .automatic)
-
-    @State private var userOriginText = ""
-    @State private var userDestinationText = ""
-    @State private var showDestination = true
-    @FocusState private var clickedTextField: Field?
-
-    // Single source of truth for which "page" of the directions flow is showing.
-    @State private var directionsSheetState: DirectionsSheetState = .hidden
-
-    // Fixed height for the collapsed (Gambar 2) sheet.
-    private let collapsedSheetHeight: CGFloat = 260
-
+    @State private var viewModel = MapViewModel()
+    @State var expandUVIndexButton = false
+    @State var expandWeatherButton = false
+    @State var showBottomPanelSheet = true
+    @State var currentPresentationDetents: PresentationDetent = .fraction(0.1)
+    
+    @FocusState var clickedTextField: Field?
+    
     var body: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .bottom) {
-                // Replace with your real MapKit / MapView here.
-                Map(position: $userCurrentPosition) {
-                    UserAnnotation()
-                }
-                .ignoresSafeArea()
-                .onAppear {
-                    locationManager.RequestUserLocation()
-                }
-                .onChange(of: locationManager.userLocation) { newLocation in
-                    if let location = newLocation {
-                        if pingWeatherManager {
-                            Task {
-                                await weatherManager.GetCurrentWeather(for: location)
-                            }
-                        }
-                    }
-                }
-                .sheet(isPresented: $showBottomPanelSheet) {
-                    BottomPanelSheetView(
-                        currentPresentationDetents: $currentPresentationDetents,
-                        userOrigin: $userOriginText,
-                        userDestination: $userDestinationText,
-                        routeMapManager: $routeMapManager,
-                        showDestination: $showDestination,
-                        focusedField: $clickedTextField,
-                        onSeeRoutes: {
-                            // Gambar 1 -> Gambar 2: sembunyikan search sheet,
-                            // tampilkan Directions sheet dalam mode collapsed.
-                            withAnimation(.spring(response: 0.35, dampingFraction: 0.9)) {
-                                showBottomPanelSheet = false
-                                directionsSheetState = .collapsed
-                            }
-                        }
-                    )
-                    .interactiveDismissDisabled()
-                    .presentationDetents([.fraction(0.1), .large], selection: $currentPresentationDetents)
-                    .presentationDragIndicator(.visible)
-                    .presentationBackgroundInteraction(.enabled)
-                }
-                .overlay(alignment: .topLeading) {
-                    weatherAndUVIndexView(expandUVIndexButton: $expandUVIndexButton, expandWeatherButton: $expandWeatherButton, weatherManager: weatherManager)
-                }
-
-                // Callout bubble for the recommended route (muncul di kedua state collapsed & expanded)
-                if directionsSheetState != .hidden, let recommended = options.first(where: { $0.isRecommended }) {
-                    VStack {
-                        Spacer()
-                        RouteCalloutBubble(option: recommended)
-                            .padding(.horizontal, 24)
-                            .padding(.bottom, 12)
-                    }
-                }
-
-                if directionsSheetState != .hidden {
-                    VStack {
-                        Spacer()
-                        DirectionsSheet(
-                            originTitle: "My Location",
-                            destinationTitle: "The Breeze",
-                            options: options,
-                            showLegend: true,
-                            isExpanded: directionsSheetState == .expanded,
-                            // Near-full-screen when expanded, computed from the
-                            // actual screen height instead of a fixed number.
-                            collapsedHeight: collapsedSheetHeight,
-                            expandedHeight: geo.size.height * 0.92,
-                            onClose: {
-                                withAnimation(.spring(response: 0.35, dampingFraction: 0.9)) {
-                                    if directionsSheetState == .expanded {
-                                        // Gambar 3 -> Gambar 2
-                                        directionsSheetState = .collapsed
-                                    } else {
-                                        // Gambar 2 -> Gambar 1 (menu utama)
-                                        directionsSheetState = .hidden
-                                        currentPresentationDetents = .fraction(0.1)
-                                        clickedTextField = nil
-                                        showBottomPanelSheet = true
-                                    }
-                                }
-                            },
-                            onExpand: {
-                                // Drag ke atas: Gambar 2 -> Gambar 3
-                                withAnimation(.spring(response: 0.35, dampingFraction: 0.9)) {
-                                    directionsSheetState = .expanded
-                                }
-                            },
-                            onCollapse: {
-                                // Drag ke bawah saat expanded: Gambar 3 -> Gambar 2
-                                withAnimation(.spring(response: 0.35, dampingFraction: 0.9)) {
-                                    directionsSheetState = .collapsed
-                                }
-                            },
-                            onStart: { print("start \($0.title)") }
-                        )
-                        // NOTE: no .frame(height:) here anymore — DirectionsSheet
-                        // now controls its own height via collapsedHeight/expandedHeight.
-                        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-                        .shadow(color: .black.opacity(0.15), radius: 20, y: -4)
-                    }
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
-            }
-            .ignoresSafeArea()
+        Map(position: $viewModel.userCurrentPosition) {
+            UserAnnotation()
         }
-    }
-}
-
-struct weatherAndUVIndexView: View {
-    @Binding var expandUVIndexButton: Bool
-    @Binding var expandWeatherButton: Bool
-
-    var weatherManager: WeatherManager
-
-    var body: some View {
-        HStack(alignment: .top) {
-            Button(action: { expandWeatherButton.toggle() }) {
-                if expandWeatherButton {
-                    VStack(alignment: .leading) {
-                        HStack {
-                            Image(systemName: weatherManager.weatherSymbolName)
-                                .padding(.trailing, 5)
-                            Text(weatherManager.temperature)
-                        }
-                        Text(weatherManager.feelsLike)
-                            .padding(.top, 2)
-                    }
-                    .fontWeight(.medium)
-                    .padding(.vertical, 15)
-                    .padding(.leading, 20)
-                    .padding(.trailing, 30)
-                    .background(.ultraThickMaterial)
-                    .cornerRadius(20)
-                    .padding(.leading, 20)
-                    .padding(.trailing, 10)
-
-                } else {
-                    HStack {
-                        Image(systemName: weatherManager.weatherSymbolName)
-                            .padding(.trailing, 5)
-                        Text(weatherManager.temperature)
-                    }
-                    .fontWeight(.medium)
-                    .padding(.vertical, 15)
-                    .padding(.horizontal, 20)
-                    .background(.ultraThickMaterial)
-                    .cornerRadius(25)
-                    .padding(.leading, 20)
-                    .padding(.trailing, 10)
-                }
-            }
-
-
-            Button(action: { expandUVIndexButton.toggle() }) {
-                if expandUVIndexButton {
-                    VStack(alignment: .leading) {
-                        HStack {
-                            Image(systemName: "sun.min")
-                                .padding(.trailing, 5)
-                            Text("\(weatherManager.uvIndex)")
-                        }
-                        Text(weatherManager.uvCategory)
-                            .font(.caption)
-                            .foregroundStyle(Color(.black))
-                        Text("Use Sunscreen")
-                            .font(.body)
-                            .foregroundStyle(Color(.black))
-                    }
-                    .fontWeight(.medium)
-                    .padding(.vertical, 15)
-                    .padding(.leading, 20)
-                    .padding(.trailing, 30)
-                    .background(.ultraThickMaterial)
-                    .cornerRadius(20)
-                    .padding(.leading, 10)
-
-                } else {
-                    HStack {
-                        Image(systemName: "sun.min")
-                            .padding(.trailing, 5)
-                        Text("\(weatherManager.uvIndex)")
-                    }
-                    .fontWeight(.medium)
-                    .padding(.vertical, 15)
-                    .padding(.horizontal, 20)
-                    .background(.ultraThickMaterial)
-                    .cornerRadius(25)
-                    .padding(.leading, 10)
-                }
-            }
+        .ignoresSafeArea()
+        .onAppear {
+            viewModel.RequestUserLocation()
         }
-        .foregroundStyle(Color(.black))
+        .onChange(of: viewModel.locationManager.userLocation) { oldValue, newLocation in
+            if let location = newLocation, viewModel.pingWeatherManager {
+                Task {
+                    await viewModel.GetCurrentWeather(for: location)
+                }
+            }
+            
+        }
+        .sheet(isPresented: $showBottomPanelSheet) {
+            BottomPanelSheetView(
+                viewModel: viewModel,
+                currentPresentationDetents: $currentPresentationDetents,
+                focusedField: $clickedTextField
+            )
+            .interactiveDismissDisabled()
+            .presentationDetents([.fraction(0.1), .large], selection: $currentPresentationDetents)
+            .presentationDragIndicator(.visible)
+            .presentationBackgroundInteraction(.enabled)
+        }
+        .overlay(alignment: .topLeading) {
+            weatherAndUVIndexView(
+                viewModel: viewModel,
+                expandUVIndexButton: $expandUVIndexButton,
+                expandWeatherButton: $expandWeatherButton
+            )
+        }
     }
 }
 
 struct BottomPanelSheetView: View {
+    @Bindable var viewModel: MapViewModel
     @Binding var currentPresentationDetents: PresentationDetent
-    @Binding var userOrigin: String
-    @Binding var userDestination: String
-
-    @Binding var routeMapManager: RouteMapManager
-    @Binding var showDestination: Bool
-    @State private var expandDestinationInformation: MKLocalSearchCompletion? = nil
-
     var focusedField: FocusState<Field?>.Binding
-    /// Called when the user taps "See Routes" on a suggestion — this is the
-    /// trigger that takes us from Gambar 1 to Gambar 2.
-    var onSeeRoutes: () -> Void
-
-    var isExtended: Bool { currentPresentationDetents == .large }
-
+    
+    var isExtended: Bool { currentPresentationDetents == .large}
+    
     var body: some View {
         VStack(alignment: .leading) {
             HStack {
                 HStack {
                     Image(systemName: "magnifyingglass")
-                    TextField("Search Destination", text: $userDestination)
+                    TextField("Search Destination", text: $viewModel.userDestinationText)
                         .disabled(!isExtended)
                         .focused(focusedField, equals: .destination)
-                        .onChange(of: $userDestination.wrappedValue) { newUserDestination in
-                            if showDestination {
-                                routeMapManager.SearchLocation(query: newUserDestination)
+                        .onChange(of: $viewModel.userDestinationText.wrappedValue) { newUserDestination in
+                            if viewModel.showDestination {
+                                viewModel.SearchLocation(query: newUserDestination)
                             }
 
                         }
@@ -286,10 +101,12 @@ struct BottomPanelSheetView: View {
                                     }
                             }
                         }
-
-
-                    if isExtended && !userDestination.isEmpty {
-                        Button(action: { routeMapManager.clearField(text: $userDestination) }) {
+                    
+                    
+                    if isExtended && !(viewModel.userDestinationText).isEmpty {
+                        Button(action: {
+                            viewModel.userDestinationText = ""
+                        }) {
                             Image(systemName: "xmark.circle.fill")
                                 .foregroundColor(.gray)
                         }
@@ -318,7 +135,7 @@ struct BottomPanelSheetView: View {
             .padding(isExtended ? 20 : 0)
 
             if isExtended {
-                if userDestination.isEmpty {
+                if viewModel.userDestinationText.isEmpty {
                     Text("Nearby")
                         .fontWeight(.medium)
                         .padding(.leading, 20)
@@ -326,17 +143,11 @@ struct BottomPanelSheetView: View {
                     Spacer()
                 } else {
                     ScrollView {
-                        VStack(spacing: 0) {
-                            ForEach(routeMapManager.results, id: \.self) { result in
+                        VStack (spacing: 0) {
+                            ForEach(viewModel.results, id: \.self) { result in
                                 LocationSuggestionView(
-                                    result: result,
-                                    expandDestinationInformation: expandDestinationInformation == result,
-                                    onTap: {
-                                        withAnimation {
-                                            expandDestinationInformation = (expandDestinationInformation == result) ? nil : result
-                                        }
-                                    },
-                                    onSeeRoutes: onSeeRoutes
+                                    viewModel: viewModel,
+                                    result: result
                                 )
 
                             }
@@ -350,16 +161,15 @@ struct BottomPanelSheetView: View {
 }
 
 struct LocationSuggestionView: View {
+    @Bindable var viewModel: MapViewModel
     var result: MKLocalSearchCompletion
-    var expandDestinationInformation: Bool
-    var onTap: () -> Void
-    var onSeeRoutes: () -> Void
-
+    
     var body: some View {
-
-        Button(action: onTap) {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 2) {
+        Button {
+            
+        } label : {
+            VStack (alignment: .leading, spacing: 2){
+                HStack (spacing: 2){
                     Circle()
                         .fill(Color(.systemGray4))
                         .frame(width: 40, height: 40)
@@ -381,9 +191,11 @@ struct LocationSuggestionView: View {
                         .foregroundStyle(Color(.systemGray2))
                     }
                 }
-
-                if expandDestinationInformation {
-                    Button(action: onSeeRoutes) {
+                
+                if viewModel.results.first == result  {
+                    Button {
+                    
+                    } label  : {
                         Text("See Routes")
                             .font(.footnote)
                             .fontWeight(.medium)
@@ -406,7 +218,7 @@ struct LocationSuggestionView: View {
             .background(Color(.systemGray6))
         }
         .cornerRadius(20)
-        .padding(.vertical, expandDestinationInformation ? 8 : 0)
+        .padding(.bottom, viewModel.results.first == result ? 8 : 0)
         .padding(.horizontal, 30)
     }
 }
@@ -432,6 +244,90 @@ private struct RouteCalloutBubble: View {
         .padding(14)
         .background(Color.accentColor)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+      
+struct weatherAndUVIndexView: View {
+    @Bindable var viewModel: MapViewModel
+    @Binding var expandUVIndexButton: Bool
+    @Binding var expandWeatherButton: Bool
+    
+    var body: some View {
+        HStack (alignment: .top) {
+            Button(action: {expandWeatherButton.toggle()}) {
+                if expandWeatherButton {
+                    VStack (alignment: .leading) {
+                        HStack {
+                            Image(systemName: viewModel.weatherSymbolName)
+                                .padding(.trailing, 5)
+                            Text(viewModel.temperature)
+                        }
+                        Text(viewModel.feelsLike)
+                            .padding(.top, 2)
+                    }
+                    .fontWeight(.medium)
+                    .padding(.vertical, 15)
+                    .padding(.leading, 20)
+                    .padding(.trailing, 30)
+                    .background(.ultraThickMaterial)
+                    .cornerRadius(20)
+                    .padding(.leading, 20)
+                    .padding(.trailing, 10)
+                    
+                } else {
+                    HStack {
+                        Image(systemName: viewModel.weatherSymbolName)
+                            .padding(.trailing, 5)
+                        Text(viewModel.temperature)
+                    }
+                    .fontWeight(.medium)
+                    .padding(.vertical, 15)
+                    .padding(.horizontal, 20)
+                    .background(.ultraThickMaterial)
+                    .cornerRadius(25)
+                    .padding(.leading, 20)
+                    .padding(.trailing, 10)
+                }
+            }
+            
+            
+            Button(action: {expandUVIndexButton.toggle()}) {
+                if expandUVIndexButton {
+                    VStack (alignment: .leading) {
+                        HStack {
+                            Image(systemName: "sun.min")
+                                .padding(.trailing, 5)
+                            Text("\(viewModel.uvIndex)")
+                        }
+                        Text(viewModel.uvCategory)
+                            .font(.caption)
+                            .foregroundStyle(Color(.systemGray))
+                        Text("Use Sunscreen")
+                            .font(.default)
+                            .foregroundStyle(Color(.systemGray))
+                    }
+                    .fontWeight(.medium)
+                    .padding(.vertical, 15)
+                    .padding(.leading, 20)
+                    .padding(.trailing, 30)
+                    .background(.ultraThickMaterial)
+                    .cornerRadius(20)
+                    .padding(.leading, 10)
+                    
+                } else {
+                    HStack {
+                        Image(systemName: "sun.min")
+                            .padding(.trailing, 5)
+                        Text("\(viewModel.uvIndex)")
+                    }
+                    .fontWeight(.medium)
+                    .padding(.vertical, 15)
+                    .padding(.horizontal, 20)
+                    .background(.ultraThickMaterial)
+                    .cornerRadius(25)
+                    .padding(.leading, 10)
+                }
+            }
+        }
+        .foregroundStyle(Color(.black))
     }
 }
 
