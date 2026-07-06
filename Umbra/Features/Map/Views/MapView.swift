@@ -451,6 +451,7 @@ struct weatherAndUVIndexView: View {
             }
         }
         .foregroundStyle(Color(.black))
+        .padding(.top, 55)
     }
 }
 
