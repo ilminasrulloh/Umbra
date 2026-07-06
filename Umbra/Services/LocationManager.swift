@@ -6,13 +6,13 @@
 //
 
 import Foundation
-import SwiftUI
 import Combine
 import MapKit
 import WeatherKit
+import Observation
 
-@Observable()
-class LocationManager: NSObject, CLLocationManagerDelegate, ObservableObject {
+@Observable
+class LocationManager: NSObject, CLLocationManagerDelegate {
     var userLocation: CLLocation?
     var heading: CLHeading?
     var userAuthorizationStatus: CLAuthorizationStatus = .notDetermined
