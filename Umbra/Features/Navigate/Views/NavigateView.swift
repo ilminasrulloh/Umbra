@@ -11,7 +11,7 @@ import MapKit
 
 struct NavigateView: View {
     @State private var locationManager = LocationManager()
-    @StateObject private var viewModel = NavigateViewModel()
+    @State private var viewModel = NavigateViewModel()
 
     @State private var selectedDestination: CLLocationCoordinate2D?
     /// Index instruksi yang sedang ditampilkan di carousel (bisa berbeda dari
