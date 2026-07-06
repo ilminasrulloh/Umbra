@@ -23,6 +23,24 @@ final class NavigateViewModel: NSObject {
     var isNavigating = false
     var errorMessage: String?
 
+    // MARK: - Camera smoothing
+
+    /// Nilai "sumber kebenaran" dari GPS/kompas — bisa datang tidak teratur & noisy
+    private var targetCoordinate: CLLocationCoordinate2D?
+    private var targetHeading: CLLocationDirection = 0
+
+    /// Nilai yang benar-benar dipakai kamera — bergerak sedikit demi sedikit menuju target
+    /// tiap tick, bukan langsung "melompat". Inilah yang bikin gerakannya halus.
+    private var displayedCoordinate: CLLocationCoordinate2D?
+    private var displayedHeading: CLLocationDirection = 0
+
+    private var cameraTimer: AnyCancellable?
+    /// 30x per detik — cukup halus secara visual, tanpa terlalu boros baterai
+    private let cameraTickInterval: TimeInterval = 1.0 / 30.0
+    /// Porsi jarak ke target yang ditempuh tiap tick. Makin kecil = makin halus tapi makin "lag" mengikuti;
+    /// makin besar = makin responsif tapi makin terasa patah. 0.12–0.15 biasanya pas untuk jalan kaki.
+    private let smoothingFactor: Double = 0.12
+
     /// Instruksi yang benar-benar punya teks (step pertama biasanya kosong)
     var activeSteps: [MKRoute.Step] {
         route?.steps.filter { !$0.instructions.isEmpty } ?? []
@@ -205,9 +223,9 @@ private extension NavigateViewModel {
         camera = .camera(
             MapCamera(
                 centerCoordinate: coordinate,
-                distance: 600,
+                distance: 300,
                 heading: displayedHeading,
-                pitch: 60
+                pitch: 45
             )
         )
     }
