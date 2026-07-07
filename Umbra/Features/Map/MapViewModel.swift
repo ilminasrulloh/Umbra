@@ -28,7 +28,7 @@ actor SearchGate {
     private let maxConcurrent = 3
     private var backgroundWaiters: [UUID: CheckedContinuation<Void, Never>] = [:]
     private var backgroundQueue: [UUID] = []
-
+    
     /// JALUR VIP: Untuk aksi pencarian eksplisit dari user (seperti klik tombol See Routes).
     /// Langsung dieksekusi tanpa antre agar aplikasi selalu terasa responsif.
     func executeForeground<T>(_ operation: () async -> T) async -> T {
@@ -39,7 +39,7 @@ actor SearchGate {
         }
         return await operation()
     }
-
+    
     /// JALUR BIASA: Untuk request otomatis di background (jarak saat mengetik).
     /// Dibatasi maksimal `maxConcurrent` dan otomatis dibuang jika Task dibatalkan oleh ketikan baru.
     func executeBackground<T>(_ operation: () async -> T) async -> T? {
@@ -75,14 +75,14 @@ actor SearchGate {
             Task { await cancelBackgroundWaiter(id: id) }
         }
     }
-
+    
     private func cancelBackgroundWaiter(id: UUID) {
         if let continuation = backgroundWaiters.removeValue(forKey: id) {
             backgroundQueue.removeAll { $0 == id }
             continuation.resume()
         }
     }
-
+    
     private func processNext() {
         while !backgroundQueue.isEmpty {
             let id = backgroundQueue.removeFirst()
@@ -121,7 +121,20 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
     var routeOptions: [RouteOption] {
         var options: [RouteOption] = []
         
-        if let shaded = shadedRoute, !shaded.coordinates.isEmpty {
+        let shaded = shadedRoute
+        let plain = calculatedRoutes.first
+        
+        let isSameRoute: Bool
+        if let shaded = shaded, let plain = plain {
+            let distanceDiff = abs(shaded.totalLength - plain.distance)
+            let pointCountDiff = abs(shaded.coordinates.count - plain.polyline.pointCount)
+            
+            isSameRoute = distanceDiff < 5 && pointCountDiff < 2
+        } else {
+            isSameRoute = false
+        }
+        
+        if let shaded = shadedRoute, !shaded.coordinates.isEmpty, !isSameRoute {
             options.append(RouteOption(
                 kind: "shaded",
                 shadePercent: shaded.shadePercent,
@@ -131,7 +144,7 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
                 isRecommended: true))
         }
         
-        if let plain = calculatedRoutes.first {
+        if let plain = calculatedRoutes.first  {
             options.append(RouteOption(
                 kind: "fastest",
                 shadePercent: 0,
@@ -151,7 +164,7 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
     private var searchDebounceTask: Task<Void, Never>?
     private var distanceCache: [String: String] = [:]
     private var distanceResolutionTask: Task<Void, Never>?
-
+    
     // Menggunakan SearchGate baru dengan pembagian prioritas
     private let searchGate = SearchGate()
     
@@ -186,7 +199,7 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
     
     func completerDidUpdateResults(_ completer: MKLocalSearchCompleter) {
         results = completer.results
-//        loadDistances(for: results)
+        //        loadDistances(for: results)
     }
     
     func completer(_ completer: MKLocalSearchCompleter, didFailWithError error: Error) {
@@ -215,26 +228,26 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
     /// Hitung rute jalan kaki asli dari lokasi user saat ini ke koordinat tujuan.
     /// Dipanggil setelah user tap "See Routes", supaya layar preview rute
     /// menampilkan jalur & estimasi yang beneran, bukan data sample.
-        @MainActor
-        func calculateWalkingRoute(to destination: CLLocationCoordinate2D) async {
-            guard let origin = locationManager.userLocation?.coordinate else {
-                calculatedRoutes = []
-                return
-            }
-    
-            let request = MKDirections.Request()
-            request.source = MKMapItem(placemark: MKPlacemark(coordinate: origin))
-            request.destination = MKMapItem(placemark: MKPlacemark(coordinate: destination))
-            request.transportType = .walking
-            request.requestsAlternateRoutes = true
-    
-            do {
-                let response = try await MKDirections(request: request).calculate()
-                calculatedRoutes = response.routes
-            } catch {
-                calculatedRoutes = []
-            }
+    @MainActor
+    func calculateWalkingRoute(to destination: CLLocationCoordinate2D) async {
+        guard let origin = locationManager.userLocation?.coordinate else {
+            calculatedRoutes = []
+            return
         }
+        
+        let request = MKDirections.Request()
+        request.source = MKMapItem(placemark: MKPlacemark(coordinate: origin))
+        request.destination = MKMapItem(placemark: MKPlacemark(coordinate: destination))
+        request.transportType = .walking
+        request.requestsAlternateRoutes = true
+        
+        do {
+            let response = try await MKDirections(request: request).calculate()
+            calculatedRoutes = response.routes
+        } catch {
+            calculatedRoutes = []
+        }
+    }
     
     func GetCurrentWeather(for location: CLLocation) async {
         do {
@@ -303,11 +316,11 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
             }
         }
     }
-
+    
     func cachedDistance(for completion: MKLocalSearchCompletion) -> String {
         distanceCache[completion.stableID] ?? "…"
     }
-
+    
     private func formattedDistance(_ meters: CLLocationDistance) -> String {
         if meters < 1000 {
             return "\(Int(meters)) m"
@@ -330,12 +343,12 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
     func midpointCoordinate(for kind: String) -> CLLocationCoordinate2D? {
         switch kind {
         case "fastest":
-                guard let coords = calculatedRoutes.first?.polyline.coordinates, !coords.isEmpty else { return nil }
-                return coords[coords.count / 2]
-            default: 
-                guard let coords = shadedRoute?.coordinates, !coords.isEmpty else { return nil }
-                return coords[coords.count / 2]
-            }
+            guard let coords = calculatedRoutes.first?.polyline.coordinates, !coords.isEmpty else { return nil }
+            return coords[coords.count / 2]
+        default:
+            guard let coords = shadedRoute?.coordinates, !coords.isEmpty else { return nil }
+            return coords[coords.count / 2]
+        }
     }
     
     @MainActor
@@ -392,7 +405,8 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
                 totalLength: route.distance,
                 totalWeight: 0,
                 estimatedTime: route.expectedTravelTime,
-                label: "Approach Leg"
+                label: "Approach Leg",
+                segments: []
             )
         } catch {
             return nil
@@ -400,17 +414,50 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
     }
     
     private func stitch(lead: RouteResult?, core: RouteResult, trail: RouteResult?) -> RouteResult {
-        var coords = lead?.coordinates ?? []
-        coords += core.coordinates
-        if let trail { coords += trail.coordinates }
+        var allSegments: [RouteSegment] = []
+        var flatCoords: [CLLocationCoordinate2D] = []
+        
+        //        var coords = lead?.coordinates ?? []
+        //        coords += core.coordinates
+        //        if let trail { coords += trail.coordinates }
+        //        return RouteResult(
+        //            nodeIds: core.nodeIds,
+        //            coordinates: coords,
+        //            totalLength: (lead?.totalLength ?? 0) + core.totalLength + (trail?.totalLength ?? 0),
+        //            totalWeight: core.totalWeight,
+        //            estimatedTime: (lead?.estimatedTime ?? 0) + core.estimatedTime + (trail?.estimatedTime ?? 0),
+        //            label: core.label,
+        //            shadedLength: core.shadedLength
+        //        )
+        if let leadLeg = lead, !leadLeg.coordinates.isEmpty {
+            allSegments.append(RouteSegment(coordinate: leadLeg.coordinates, environment: "sunny"))
+            flatCoords += leadLeg.coordinates
+        }
+        
+        if !core.segments.isEmpty {
+            allSegments += core.segments
+            flatCoords += core.coordinates
+        } else {
+            // Fallback placeholder if your planner doesn't generate segments yet:
+            allSegments.append(RouteSegment(coordinate: core.coordinates, environment: core.label))
+            flatCoords += core.coordinates
+        }
+        
+        // 3. Add the exit leg to destination
+        if let trailLeg = trail, !trailLeg.coordinates.isEmpty {
+            allSegments.append(RouteSegment(coordinate: trailLeg.coordinates, environment: "sunny"))
+            flatCoords += trailLeg.coordinates
+        }
+        
         return RouteResult(
             nodeIds: core.nodeIds,
-            coordinates: coords,
+            coordinates: flatCoords,
             totalLength: (lead?.totalLength ?? 0) + core.totalLength + (trail?.totalLength ?? 0),
             totalWeight: core.totalWeight,
             estimatedTime: (lead?.estimatedTime ?? 0) + core.estimatedTime + (trail?.estimatedTime ?? 0),
             label: core.label,
-            shadedLength: core.shadedLength
+            shadedLength: core.shadedLength,
+            segments: allSegments // Inject the multi-colored segments here!
         )
     }
     
@@ -427,7 +474,7 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
             shadedRoute = RouteResult(
                 nodeIds: [], coordinates: route.polyline.coordinates,
                 totalLength: route.distance, totalWeight: 0,
-                estimatedTime: route.expectedTravelTime, label: "Apple Maps (no graph coverage)"
+                estimatedTime: route.expectedTravelTime, label: "Apple Maps (no graph coverage)", segments: []
             )
         } catch {
             shadedRoute = nil

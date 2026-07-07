@@ -64,19 +64,8 @@ struct MapView: View {
                     UserAnnotation()
                     
                     
-                    if let route = viewModel.calculatedRoutes.first {
-                        MapPolyline(route.polyline)
-                            .stroke(
-                                selectedRouteKind == "fastest" ? .yellow : .yellow.opacity(0.3),
-                                lineWidth: selectedRouteKind == "fastest" ? 6 : 3)
-                    }
+                    routeOverlay
                     
-                    if let route = viewModel.shadedRoute, !route.coordinates.isEmpty {
-                        MapPolyline(coordinates: route.coordinates)
-                            .stroke(
-                                selectedRouteKind == "shaded" ? .blue : .blue.opacity(0.3),
-                                lineWidth: selectedRouteKind == "shaded" ? 6 : 3)
-                    }
                     
                     if let destination = resolvedDestination {
                         Marker(destination.title, coordinate: destination.coordinate)
@@ -94,7 +83,7 @@ struct MapView: View {
                             Annotation("", coordinate: coordinate) {
                                 RouteCalloutBubble(option: option, isSelected: option.kind == selectedRouteKind)
                                     .onTapGesture {
-                                        withAnimation(.spring()) {
+                                        withAnimation(.spring(duration: 0.3)) {
                                             selectedRouteKind = option.kind
                                         }
                                     }
@@ -113,7 +102,11 @@ struct MapView: View {
                             await viewModel.GetCurrentWeather(for: location)
                         }
                     }
-                    
+                }
+                .onChange(of: viewModel.routeOptions) { _, newOptions in
+                    if newOptions.count == 1, let onlyOption = newOptions.first {
+                        selectedRouteKind = onlyOption.kind
+                    }
                 }
                 .sheet(isPresented: $showBottomPanelSheet) {
                     BottomPanelSheetView(
@@ -151,16 +144,16 @@ struct MapView: View {
                         expandWeatherButton: $expandWeatherButton
                     )
                 }
-
-//                if directionsSheetState != .hidden, let recommended = viewModel.routeOptions.first(where: { $0.isRecommended }) {
-//                    VStack {
-//                        Spacer()
-//                        RouteCalloutBubble(option: recommended)
-//                            .padding(.horizontal, 24)
-//                            .padding(.bottom, 12)
-//                    }
-//                }
-            
+                
+                //                if directionsSheetState != .hidden, let recommended = viewModel.routeOptions.first(where: { $0.isRecommended }) {
+                //                    VStack {
+                //                        Spacer()
+                //                        RouteCalloutBubble(option: recommended)
+                //                            .padding(.horizontal, 24)
+                //                            .padding(.bottom, 12)
+                //                    }
+                //                }
+                
                 if directionsSheetState != .hidden {
                     VStack {
                         Spacer()
@@ -250,6 +243,28 @@ struct MapView: View {
                 destinationTitle: destination.title,
                 selectedRouteKind: selectedRouteKind
             )
+        }
+    }
+    
+    @MapContentBuilder
+    private var routeOverlay: some MapContent {
+        if let route = viewModel.calculatedRoutes.first {
+            MapPolyline(route.polyline)
+                .stroke(
+                    selectedRouteKind == "fastest" ? .yellow : .yellow.opacity(0.3),
+                    lineWidth: selectedRouteKind == "fastest" ? 6 : 3)
+        }
+        
+        if let route = viewModel.shadedRoute, !route.coordinates.isEmpty {
+            ForEach(route.segments) { segment in
+                
+                let polyline = MapPolyline(coordinates: segment.coordinate)
+                
+                let strokeColor = selectedRouteKind == "shaded" ? segment.color : segment.color.opacity(0.3)
+                let strokeWidth: CGFloat = selectedRouteKind == "shaded" ? 6 : 3
+                
+                polyline.stroke(strokeColor, lineWidth: strokeWidth)
+            }
         }
     }
 }
