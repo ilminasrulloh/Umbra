@@ -51,8 +51,8 @@ struct LocationRow: View {
                 .foregroundStyle(.tertiary)
                 .font(.system(size: 15, weight: .semibold))
         }
-        .padding(.vertical, 12)
-        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .padding(.horizontal, 12)
     }
 }
 
