@@ -50,6 +50,8 @@ struct MapView: View {
     /// Diisi saat tombol "Start" di DirectionsSheet ditekan — trigger fullScreenCover ke NavigateView
     @State private var navigateDestination: NavigationDestination?
     
+    
+    let locationManager = LocationManager()
     /// Tinggi sheet saat collapsed. Dibesarkan dari 260 -> 400 karena sekarang
     /// kartu rute yang direkomendasikan (RouteOptionCard) ikut ditampilkan
     /// walau sheet belum di-expand, jadi butuh ruang lebih supaya tidak terpotong.
@@ -59,11 +61,23 @@ struct MapView: View {
         viewModel.routeOptions.first(where: { $0.kind == selectedRouteKind })
     }
     
+    private var coneRotationDegrees: Double? {
+        guard let heading = locationManager.heading, heading.headingAccuracy >= 0 else { return nil }
+        let value = heading.trueHeading >= 0 ? heading.trueHeading : heading.magneticHeading
+        return value
+    }
+    
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .bottom) {
                 Map(position: $viewModel.userCurrentPosition) {
                     UserAnnotation()
+                    if let userCoordinate = locationManager.userLocation?.coordinate {
+                        Annotation("", coordinate: userCoordinate) {
+                            UserLocationIndicator(headingDegrees: coneRotationDegrees)
+                        }
+                        .annotationTitles(.hidden)
+                    }
                     
                     if let route = viewModel.calculatedRoutes.first {
                         MapPolyline(route.polyline)
