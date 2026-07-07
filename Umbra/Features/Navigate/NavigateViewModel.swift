@@ -122,6 +122,21 @@ extension RouteGraph {
 
 // MARK: - Route result
 
+struct RouteSegment: Identifiable {
+    let id = UUID()
+    var coordinate: [CLLocationCoordinate2D]
+    var environment: String
+    
+    var color: Color {
+        switch environment {
+        case "sunny": return .yellow
+        case "indoor": return .green
+        case "shaded": return .blue
+        default: return .gray
+        }
+    }
+}
+
 struct RouteResult {
     let nodeIds: [String]
     let coordinates: [CLLocationCoordinate2D]
@@ -130,6 +145,7 @@ struct RouteResult {
     let estimatedTime: TimeInterval
     let label: String
     var shadedLength: Double = 0
+    var segments: [RouteSegment]
     
     var totalLengthKm: Double { totalLength / 1000 }
     var estimatedTimeMinutes: Double { estimatedTime / 60 }
@@ -170,7 +186,7 @@ final class RoutePlanner {
     
     private func buildResult(from edges: [RouteEdge], label: String) -> RouteResult {
         guard let first = edges.first else {
-            return RouteResult(nodeIds: [], coordinates: [], totalLength: 0, totalWeight: 0, estimatedTime: 0, label: label)
+            return RouteResult(nodeIds: [], coordinates: [], totalLength: 0, totalWeight: 0, estimatedTime: 0, label: label, segments: [])
         }
         
         var nodeIds = [first.source]
@@ -187,7 +203,7 @@ final class RoutePlanner {
             if edge.environment != .sunny {
                 shadedLength += edge.length
             }
-                
+            
             let coords = edge.coordinates.map {$0.coordinate}
             
             if coordinates.isEmpty {
@@ -204,7 +220,8 @@ final class RoutePlanner {
             totalWeight: totalWeight,
             estimatedTime: totalLength/walkingSpeed,
             label: label,
-            shadedLength: shadedLength)
+            shadedLength: shadedLength,
+            segments: [])
     }
     
     private func dijkstra(from start: String, to end: String, cost: (RouteEdge) -> Double) throws -> [RouteEdge] {
@@ -245,44 +262,44 @@ final class RoutePlanner {
         return path.reversed()
     }
     
-//    private func buildResult(from edges: [RouteEdge], label: String) -> RouteResult {
-//        guard let first = edges.first else {
-//            return RouteResult(nodeIds: [], coordinates: [], totalLength: 0, totalWeight: 0, estimatedTime: 0, label: label)
-//        }
-//
-//        var nodeIds = [first.source]
-//        var coordinates: [CLLocationCoordinate2D] = []
-//        var totalLength = 0.0
-//        var totalWeight = 0.0
-//
-//        for edge in edges {
-//            nodeIds.append(edge.target)
-//            totalLength += edge.length
-//            totalWeight += edge.weight
-//            let coords = edge.coordinates.map { $0.coordinate }
-//            if coordinates.isEmpty {
-//                coordinates.append(contentsOf: coords)
-//            } else {
-//                coordinates.append(contentsOf: coords.dropFirst())
-//            }
-//        }
-//
-//        return RouteResult(
-//            nodeIds: nodeIds,
-//            coordinates: coordinates,
-//            totalLength: totalLength,
-//            totalWeight: totalWeight,
-//            estimatedTime: totalLength / walkingSpeed,
-//            label: label
-//        )
-//    }
+    //    private func buildResult(from edges: [RouteEdge], label: String) -> RouteResult {
+    //        guard let first = edges.first else {
+    //            return RouteResult(nodeIds: [], coordinates: [], totalLength: 0, totalWeight: 0, estimatedTime: 0, label: label)
+    //        }
+    //
+    //        var nodeIds = [first.source]
+    //        var coordinates: [CLLocationCoordinate2D] = []
+    //        var totalLength = 0.0
+    //        var totalWeight = 0.0
+    //
+    //        for edge in edges {
+    //            nodeIds.append(edge.target)
+    //            totalLength += edge.length
+    //            totalWeight += edge.weight
+    //            let coords = edge.coordinates.map { $0.coordinate }
+    //            if coordinates.isEmpty {
+    //                coordinates.append(contentsOf: coords)
+    //            } else {
+    //                coordinates.append(contentsOf: coords.dropFirst())
+    //            }
+    //        }
+    //
+    //        return RouteResult(
+    //            nodeIds: nodeIds,
+    //            coordinates: coordinates,
+    //            totalLength: totalLength,
+    //            totalWeight: totalWeight,
+    //            estimatedTime: totalLength / walkingSpeed,
+    //            label: label
+    //        )
+    //    }
     
     /// We only need the shadiest route for navigation right now — kept as its own
     /// method (rather than the old shadiest/fastest/balanced tuple) since
     /// NavigateViewModel isn't exposing a route-type picker.
     func shadiestRoute(from start: String, to end: String) throws -> RouteResult {
         let edges = try dijkstra(from: start, to: end) { $0.weight }
-        return buildResult(from: edges, label: "Shadiest (JSON graph)")
+        return buildResult(from: edges, label: "shaded")
     }
     
     private static func indoorPriorityCost(for edge: RouteEdge) -> Double {
@@ -391,7 +408,7 @@ final class NavigateViewModel: NSObject {
         isFollowingUser = true
     }
     
-    private var maneuvers: [(instruction: String, coordinate: CLLocationCoordinate2D, distanceFromStart: CLLocationDistance)] = []
+    private var maneuvers: [(instruction: String, coordinate: CLLocationCoordinate2D, distanceFromStart: CLLocationDistance, nodeId: String?)] = []
     private var cumulativeDistances: [CLLocationDistance] = []
     
     
@@ -529,7 +546,7 @@ final class NavigateViewModel: NSObject {
         request.source = MKMapItem(placemark: MKPlacemark(coordinate: origin))
         request.destination = MKMapItem(placemark: MKPlacemark(coordinate: destination))
         request.transportType = .walking
-
+        
         do {
             let response = try await MKDirections(request: request).calculate()
             guard let route = response.routes.first else {
@@ -542,7 +559,8 @@ final class NavigateViewModel: NSObject {
                 totalLength: route.distance,
                 totalWeight: 0,
                 estimatedTime: route.expectedTravelTime,
-                label: "Fastest (Apple Maps)"
+                label: "Fastest (Apple Maps)",
+                segments: []
             )
             self.shadedRouteResult = result
             self.currentStepIndex = 0
@@ -579,7 +597,7 @@ final class NavigateViewModel: NSObject {
             await calculateShadedRoute(from: origin, to: destination)
         }
     }
-        
+    
     func calculateShadedRoute(from origin: CLLocationCoordinate2D, to destination: CLLocationCoordinate2D) async {
         guard let graph, let planner else {
             errorMessage = "Route graph (1400.json) failed to load — check it's included in the app bundle."
@@ -740,7 +758,8 @@ final class NavigateViewModel: NSObject {
                 totalLength: newRoute.distance,
                 totalWeight: 0,
                 estimatedTime: newRoute.expectedTravelTime,
-                label: "Approach Leg"
+                label: "Approach Leg",
+                segments: []
             )
         } catch {
             return nil
@@ -767,7 +786,7 @@ final class NavigateViewModel: NSObject {
             totalLength: (lead?.totalLength ?? 0) + core.totalLength + (trail?.totalLength ?? 0),
             totalWeight: core.totalWeight,
             estimatedTime: (lead?.estimatedTime ?? 0) + core.estimatedTime + (trail?.estimatedTime ?? 0),
-            label: core.label
+            label: core.label, segments: []
         )
     }
     
@@ -779,17 +798,48 @@ final class NavigateViewModel: NSObject {
     private func buildManeuvers(from route: RouteResult) {
         cumulativeDistances = [0]
         let coords = route.coordinates
+        let nodes = route.nodeIds
+        
+        print(nodes)
+        
         for i in 1..<max(coords.count, 1) where i < coords.count {
             let d = calculateDistance(a: coords[i - 1], b: coords[i])
             cumulativeDistances.append(cumulativeDistances[i - 1] + d)
         }
         
         maneuvers = []
-        guard coords.count > 2 else {
-            if let last = coords.last {
-                maneuvers = [(instruction: "Arrive at destination", coordinate: last, distanceFromStart: cumulativeDistances.last ?? 0)]
+        
+        func isIndoorNode(_ nodeId: String) -> Bool {
+            if let nodeVal = Int(nodeId) {
+                return ((-10008) ... (-10000)).contains(nodeVal)
             }
-            return
+            return false
+        }
+        
+        var isCurrentlyInside = false
+        
+        for i in 0..<nodes.count {
+            let currentNodeId = nodes[i]
+            let indoor = isIndoorNode(currentNodeId)
+            
+            if !isCurrentlyInside && indoor {
+                let instruction = "Enter the Building"
+                let coord = i < coords.count ? coords[i] : (coords.last ?? .init())
+                let dist = i < cumulativeDistances.count ? cumulativeDistances[i] : (cumulativeDistances.last ?? 0)
+                maneuvers.append((instruction: instruction, coordinate: coord, distanceFromStart: dist, nodeId: currentNodeId))
+                isCurrentlyInside = true
+            } else if isCurrentlyInside && indoor {
+                let instruction = "Walk inside the Building"
+                let coord = i < coords.count ? coords[i] : (coords.last ?? .init())
+                let dist = i < cumulativeDistances.count ? cumulativeDistances[i] : (cumulativeDistances.last ?? 0)
+                maneuvers.append((instruction: instruction, coordinate: coord, distanceFromStart: dist, nodeId: currentNodeId))
+            } else if isCurrentlyInside && !indoor {
+                let instruction = "Exit the Building"
+                let coord = i < coords.count ? coords[i] : (coords.last ?? .init())
+                let dist = i < cumulativeDistances.count ? cumulativeDistances[i] : (cumulativeDistances.last ?? 0)
+                maneuvers.append((instruction: instruction, coordinate: coord, distanceFromStart: dist, nodeId: currentNodeId))
+                isCurrentlyInside = false
+            }
         }
         
         for i in 1..<(coords.count - 1) {
@@ -797,15 +847,14 @@ final class NavigateViewModel: NSObject {
             let b2 = bearing(coords[i], coords[i + 1])
             var delta = b2 - b1
             delta = (delta + 540).truncatingRemainder(dividingBy: 360) - 180
-            guard abs(delta) > 25 else { continue }
-            let text = delta > 0 ? "Turn right" : "Turn left"
-            maneuvers.append((instruction: text, coordinate: coords[i], distanceFromStart: cumulativeDistances[i]))
+            if abs(delta) > 60 {
+                let text = delta > 0 ? "Turn Right" : "Turn Left"
+                maneuvers.append((instruction: text, coordinate: coords[i], distanceFromStart: cumulativeDistances[i], nodeId: nil))
+            }
         }
-        maneuvers.append((instruction: "Arrive at destination", coordinate: coords[coords.count - 1], distanceFromStart: cumulativeDistances.last ?? 0))
         
-        if maneuvers.isEmpty, let last = coords.last {
-            maneuvers = [(instruction: "Continue straight", coordinate: last, distanceFromStart: cumulativeDistances.last ?? 0)]
-        }
+        maneuvers.sort { $0.distanceFromStart < $1.distanceFromStart }
+        maneuvers.append((instruction: "Arrive at destination", coordinate: coords.last ?? .init(), distanceFromStart: cumulativeDistances.last ?? 0, nodeId: nil))
     }
     
     private func bearing(_ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D) -> Double {
