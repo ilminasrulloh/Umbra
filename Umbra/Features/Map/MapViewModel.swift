@@ -48,6 +48,32 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
     var calculatedRoutes: [MKRoute] = []
     var shadedRoute: RouteResult?
     
+    var routeOptions: [RouteOption] {
+        var options: [RouteOption] = []
+        
+        if let shaded = shadedRoute, !shaded.coordinates.isEmpty {
+            options.append(RouteOption(
+                kind: "shaded",
+                shadePercent: shaded.shadePercent,
+                subtitle: shaded.shadePercent >= 40 ? "Recommended - stays mostly shaded" : "Some sunshine along the way",
+                minutes: max(Int(shaded.estimatedTime/60), 1),
+                meters: Int(shaded.totalLength),
+                isRecommended: true))
+        }
+        
+        if let plain = calculatedRoutes.first {
+            options.append(RouteOption(
+                kind: "fastest",
+                shadePercent: 0,
+                subtitle: "Fastest",
+                minutes: max(Int(plain.expectedTravelTime/60), 1),
+                meters: Int(plain.distance),
+                isRecommended: false))
+        }
+        
+        return options
+    }
+    
     private var routeGraph: RouteGraph?
     private var routePlanner: RoutePlanner?
     private let snapThresholdMeters: CLLocationDistance = 20
@@ -262,7 +288,8 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
             totalLength: (lead?.totalLength ?? 0) + core.totalLength + (trail?.totalLength ?? 0),
             totalWeight: core.totalWeight,
             estimatedTime: (lead?.estimatedTime ?? 0) + core.estimatedTime + (trail?.estimatedTime ?? 0),
-            label: core.label
+            label: core.label,
+            shadedLength: core.shadedLength
         )
     }
     

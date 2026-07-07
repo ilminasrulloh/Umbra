@@ -10,6 +10,7 @@ import SwiftUI
 /// attributes for route option
 struct RouteOption: Identifiable, Equatable {
     let id = UUID()
+    let kind: String
     let shadePercent: Int
     let subtitle: String
     let minutes: Int
@@ -31,10 +32,10 @@ struct RouteOption: Identifiable, Equatable {
 }
 
 extension RouteOption {
-    /// sample data for route option (will change for ViewModel later)
+    /// sample data for route option (will change for ViewModel later
     static let sample: [RouteOption] = [
-        RouteOption(shadePercent: 45, subtitle: "Recommended", minutes: 7, meters: 700, isRecommended: true),
-        RouteOption(shadePercent: 52, subtitle: "Takes a bit longer, but totally sweat-free", minutes: 10, meters: 950, isRecommended: false),
-        RouteOption(shadePercent: 23, subtitle: "Expect some direct sunlight", minutes: 5, meters: 450, isRecommended: false)
+        RouteOption(kind: "shaded", shadePercent: 45, subtitle: "Recommended", minutes: 7, meters: 700, isRecommended: true),
+        RouteOption(kind: "fastest", shadePercent: 52, subtitle: "Takes a bit longer, but totally sweat-free", minutes: 10, meters: 950, isRecommended: false),
+        RouteOption(kind: "fastest", shadePercent: 23, subtitle: "Expect some direct sunlight", minutes: 5, meters: 450, isRecommended: false)
     ]
 }
