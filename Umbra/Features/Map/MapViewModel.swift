@@ -121,6 +121,7 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
     var routeOptions: [RouteOption] {
         var options: [RouteOption] = []
         
+        let hasShaded = shadedRoute != nil && !(shadedRoute!.coordinates.isEmpty)
         let shaded = shadedRoute
         let plain = calculatedRoutes.first
         
@@ -145,10 +146,11 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
         }
         
         if let plain = calculatedRoutes.first  {
+            let isOnlyRoute = !hasShaded
             options.append(RouteOption(
                 kind: "fastest",
                 shadePercent: 0,
-                subtitle: isOnlyRoute ? "Recommended - Fastest" : "Fastest",
+                subtitle: isOnlyRoute ? "Recommended - Apple Maps Route" : "Apple Maps Route",
                 minutes: max(Int(plain.expectedTravelTime/60), 1),
                 meters: Int(plain.distance),
                 isRecommended: isOnlyRoute))
