@@ -151,16 +151,16 @@ struct MapView: View {
                         expandWeatherButton: $expandWeatherButton
                     )
                 }
-                
-                //                if directionsSheetState != .hidden, let recommended = viewModel.routeOptions.first(where: { $0.isRecommended }) {
-                //                    VStack {
-                //                        Spacer()
-                //                        RouteCalloutBubble(option: recommended)
-                //                            .padding(.horizontal, 24)
-                //                            .padding(.bottom, 12)
-                //                    }
-                //                }
-                
+
+//                if directionsSheetState != .hidden, let recommended = viewModel.routeOptions.first(where: { $0.isRecommended }) {
+//                    VStack {
+//                        Spacer()
+//                        RouteCalloutBubble(option: recommended)
+//                            .padding(.horizontal, 24)
+//                            .padding(.bottom, 12)
+//                    }
+//                }
+            
                 if directionsSheetState != .hidden {
                     VStack {
                         Spacer()

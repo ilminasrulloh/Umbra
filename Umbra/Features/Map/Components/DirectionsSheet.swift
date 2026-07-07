@@ -197,14 +197,6 @@ struct DirectionsSheet: View {
                 Spacer(minLength: 12)
             }
         }
-        // Always laid out at the full expanded height so dragging never
-        // triggers a relayout of the header/list/cards — only the viewport
-        // below changes size. That's what actually killed the jitter:
-        // before, .frame(height: liveHeight) sat directly on this VStack,
-        // so every pixel of finger movement forced SwiftUI to re-layout the
-        // whole subtree (ScrollView + every RouteOptionsCard) on the main
-        // thread. Apple's sheet resizes via a compositor transform, not a
-        // layout pass — this mirrors that by making the resize a pure clip.
         .frame(height: expandedHeight, alignment: .top)
         .frame(height: liveHeight, alignment: .top)
         .clipped()
@@ -212,25 +204,18 @@ struct DirectionsSheet: View {
     }
 }
 
-/// Origin/destination row with two independently tappable targets, styled
-/// like the standard Maps "from -> to" bar (dot, connecting line, pin).
-/// Tapping either title reopens the search sheet for just that field.
-/// Origin/destination row with two independently tappable targets, styled
-/// exactly like the LocationInputCard / image_191d23.png design.
 private struct RouteEndpointsRow: View {
     let originTitle: String
     let destinationTitle: String
-    var onEditDestination: () -> Void // onEditOrigin dihapus karena tidak digunakan lagi
+    var onEditDestination: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
-            // Kamasukan langsung LocationRow tanpa Button agar TIDAK BISA di-interact
             LocationRow(kind: .origin, title: originTitle)
 
             Divider()
                 .padding(.leading, 54)
 
-            // Hanya destination yang menggunakan Button agar tetap bisa diubah
             Button(action: onEditDestination) {
                 LocationRow(kind: .destination, title: destinationTitle)
             }

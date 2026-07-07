@@ -22,7 +22,15 @@ struct RouteOption: Identifiable, Equatable {
     }
 
     var durationText: String {
-        "\(minutes) mins  •  \(meters) m"
+        let formattedDistance: String
+        
+        if meters >= 1000 {
+            formattedDistance = String(format: "%.1f km", Double(meters) / 1000.0)
+        } else {
+            formattedDistance = "\(Int(meters)) m"
+        }
+        
+        return "\(minutes) mins  •  \(formattedDistance)"
     }
 
     /// emoji for recommended route
@@ -35,7 +43,7 @@ extension RouteOption {
     /// sample data for route option (will change for ViewModel later
     static let sample: [RouteOption] = [
         RouteOption(kind: "shaded", shadePercent: 45, subtitle: "Recommended", minutes: 7, meters: 700, isRecommended: true),
-        RouteOption(kind: "fastest", shadePercent: 52, subtitle: "Takes a bit longer, but totally sweat-free", minutes: 10, meters: 950, isRecommended: false),
+        RouteOption(kind: "fastest", shadePercent: 52, subtitle: "Takes a bit longer, but totally sweat-free", minutes: 10, meters: 2351, isRecommended: false),
         RouteOption(kind: "fastest", shadePercent: 23, subtitle: "Expect some direct sunlight", minutes: 5, meters: 450, isRecommended: false)
     ]
 }
