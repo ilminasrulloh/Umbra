@@ -71,7 +71,6 @@ struct MapView: View {
         GeometryReader { geo in
             ZStack(alignment: .bottom) {
                 Map(position: $viewModel.userCurrentPosition) {
-                    UserAnnotation()
                     if let userCoordinate = locationManager.userLocation?.coordinate {
                         Annotation("", coordinate: userCoordinate) {
                             UserLocationIndicator(headingDegrees: coneRotationDegrees)
