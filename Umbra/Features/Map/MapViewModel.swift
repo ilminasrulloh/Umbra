@@ -17,10 +17,6 @@ struct NavigationDestination: Identifiable {
     let title: String
 }
 
-extension MKLocalSearchCompletion {
-    var stableID: String { "\(title)|\(subtitle)" }
-}
-
 /// Mengatur lalu lintas pencarian MapKit agar tidak overload,
 /// sekaligus menjamin tombol See Routes (Foreground) selalu responsif tanpa antre.
 actor SearchGate {
@@ -175,36 +171,6 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
         loadRouteGraph()
     }
     
-    func InitSearchCompleter() {
-        completer.delegate = self
-        completer.resultTypes = [.address, .pointOfInterest]
-    }
-    
-    func SearchLocation(query: String) {
-        searchDebounceTask?.cancel()
-        
-        distanceCache.removeAll()
-        
-        guard !query.isEmpty else {
-            results = []
-            return
-        }
-        
-        searchDebounceTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 250_000_000) // 250ms debounce
-            guard !Task.isCancelled else { return }
-            completer.queryFragment = query
-        }
-    }
-    
-    func completerDidUpdateResults(_ completer: MKLocalSearchCompleter) {
-        results = completer.results
-    }
-    
-    func completer(_ completer: MKLocalSearchCompleter, didFailWithError error: Error) {
-        results = []
-    }
-    
     @MainActor
     func resolveDestination(for completion: MKLocalSearchCompletion) async -> NavigationDestination? {
         await searchGate.executeForeground {
@@ -217,10 +183,6 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
                 return nil
             }
         }
-    }
-    
-    func RequestUserLocation() {
-        locationManager.RequestUserLocation()
     }
     
     @MainActor
@@ -241,21 +203,6 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
             calculatedRoutes = response.routes
         } catch {
             calculatedRoutes = []
-        }
-    }
-    
-    func GetCurrentWeather(for location: CLLocation) async {
-        do {
-            let weather = try await weatherService.weather(for: location)
-            let current = weather.currentWeather
-            
-            self.temperature = "\(Int(current.temperature.value))°"
-            self.feelsLike = "Feels like \(Int(current.apparentTemperature.value))°"
-            self.uvIndex = Int(current.uvIndex.value)
-            self.uvCategory = "\(current.uvIndex.category.description) UV Index"
-            self.weatherSymbolName = current.symbolName
-        } catch {
-            return
         }
     }
     
@@ -311,39 +258,6 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
         }
     }
     
-    func cachedDistance(for completion: MKLocalSearchCompletion) -> String {
-        distanceCache[completion.stableID] ?? "…"
-    }
-    
-    private func formattedDistance(_ meters: CLLocationDistance) -> String {
-        if meters < 1000 {
-            return "\(Int(meters)) m"
-        } else {
-            return String(format: "%.1f km", meters / 1000)
-        }
-    }
-    
-    private func loadRouteGraph() {
-        guard let url = Bundle.main.url(forResource: "1400", withExtension: "json") else { return }
-        do {
-            let graph = try RouteGraph(jsonURL: url)
-            self.routeGraph = graph
-            self.routePlanner = RoutePlanner(graph: graph)
-        } catch {
-        }
-    }
-    
-    func midpointCoordinate(for kind: String) -> CLLocationCoordinate2D? {
-        switch kind {
-        case "fastest":
-            guard let coords = calculatedRoutes.first?.polyline.coordinates, !coords.isEmpty else { return nil }
-            return coords[coords.count / 2]
-        default:
-            guard let coords = shadedRoute?.coordinates, !coords.isEmpty else { return nil }
-            return coords[coords.count / 2]
-        }
-    }
-    
     @MainActor
     func calculateShadedWalkingRoute(to destination: CLLocationCoordinate2D) async {
         guard let origin = locationManager.userLocation?.coordinate else {
@@ -373,6 +287,107 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
             shadedRoute = stitch(lead: leadLeg, core: core, trail: trailLeg)
         } catch {
             await legacyAppleMapsRoute(from: origin, to: destination)
+        }
+    }
+    
+    func InitSearchCompleter() {
+        completer.delegate = self
+        completer.resultTypes = [.address, .pointOfInterest]
+    }
+    
+    func SearchLocation(query: String) {
+        searchDebounceTask?.cancel()
+        
+        distanceCache.removeAll()
+        
+        guard !query.isEmpty else {
+            results = []
+            return
+        }
+        
+        searchDebounceTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 250_000_000) // 250ms debounce
+            guard !Task.isCancelled else { return }
+            completer.queryFragment = query
+        }
+    }
+    
+    func completerDidUpdateResults(_ completer: MKLocalSearchCompleter) {
+        results = completer.results
+    }
+    
+    func completer(_ completer: MKLocalSearchCompleter, didFailWithError error: Error) {
+        results = []
+    }
+    
+    func RequestUserLocation() {
+        locationManager.RequestUserLocation()
+    }
+    
+    func GetCurrentWeather(for location: CLLocation) async {
+        do {
+            let weather = try await weatherService.weather(for: location)
+            let current = weather.currentWeather
+            
+            self.temperature = "\(Int(current.temperature.value))°"
+            self.feelsLike = "Feels like \(Int(current.apparentTemperature.value))°"
+            self.uvIndex = Int(current.uvIndex.value)
+            self.uvCategory = "\(current.uvIndex.category.description) UV Index"
+            self.weatherSymbolName = current.symbolName
+        } catch {
+            return
+        }
+    }
+    
+    func cachedDistance(for completion: MKLocalSearchCompletion) -> String {
+        distanceCache[completion.stableID] ?? "…"
+    }
+    
+    func midpointCoordinate(for kind: String) -> CLLocationCoordinate2D? {
+        switch kind {
+        case "fastest":
+            guard let coords = calculatedRoutes.first?.polyline.coordinates, !coords.isEmpty else { return nil }
+            return coords[coords.count / 2]
+        default:
+            guard let coords = shadedRoute?.coordinates, !coords.isEmpty else { return nil }
+            return coords[coords.count / 2]
+        }
+    }
+    
+    @MainActor
+    private func legacyAppleMapsRoute(from origin: CLLocationCoordinate2D, to destination: CLLocationCoordinate2D) async {
+        let request = MKDirections.Request()
+        request.source = MKMapItem(placemark: MKPlacemark(coordinate: origin))
+        request.destination = MKMapItem(placemark: MKPlacemark(coordinate: destination))
+        request.transportType = .walking
+        do {
+            let response = try await MKDirections(request: request).calculate()
+            guard let route = response.routes.first else { shadedRoute = nil; return }
+            shadedRoute = RouteResult(
+                nodeIds: [], coordinates: route.polyline.coordinates,
+                totalLength: route.distance, totalWeight: 0,
+                estimatedTime: route.expectedTravelTime, label: "Apple Maps (no graph coverage)", segments: []
+            )
+        } catch {
+            shadedRoute = nil
+        }
+    }
+    
+    private func formattedDistance(_ meters: CLLocationDistance) -> String {
+        if meters < 1000 {
+            return "\(Int(meters)) m"
+        } else {
+            return String(format: "%.1f km", meters / 1000)
+        }
+    }
+    
+    private func loadRouteGraph() {
+        guard let url = Bundle.main.url(forResource: "1400", withExtension: "json") else { return }
+        do {
+            let graph = try RouteGraph(jsonURL: url)
+            self.routeGraph = graph
+            self.routePlanner = RoutePlanner(graph: graph)
+        } catch {
         }
     }
     
@@ -407,18 +422,6 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
         var allSegments: [RouteSegment] = []
         var flatCoords: [CLLocationCoordinate2D] = []
         
-        //        var coords = lead?.coordinates ?? []
-        //        coords += core.coordinates
-        //        if let trail { coords += trail.coordinates }
-        //        return RouteResult(
-        //            nodeIds: core.nodeIds,
-        //            coordinates: coords,
-        //            totalLength: (lead?.totalLength ?? 0) + core.totalLength + (trail?.totalLength ?? 0),
-        //            totalWeight: core.totalWeight,
-        //            estimatedTime: (lead?.estimatedTime ?? 0) + core.estimatedTime + (trail?.estimatedTime ?? 0),
-        //            label: core.label,
-        //            shadedLength: core.shadedLength
-        //        )
         if let leadLeg = lead, !leadLeg.coordinates.isEmpty {
             allSegments.append(RouteSegment(coordinate: leadLeg.coordinates, environment: "sunny"))
             flatCoords += leadLeg.coordinates
@@ -428,12 +431,10 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
             allSegments += core.segments
             flatCoords += core.coordinates
         } else {
-            // Fallback placeholder if your planner doesn't generate segments yet:
             allSegments.append(RouteSegment(coordinate: core.coordinates, environment: core.label))
             flatCoords += core.coordinates
         }
         
-        // 3. Add the exit leg to destination
         if let trailLeg = trail, !trailLeg.coordinates.isEmpty {
             allSegments.append(RouteSegment(coordinate: trailLeg.coordinates, environment: "sunny"))
             flatCoords += trailLeg.coordinates
@@ -450,23 +451,8 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
             segments: allSegments // Inject the multi-colored segments here!
         )
     }
-    
-    @MainActor
-    private func legacyAppleMapsRoute(from origin: CLLocationCoordinate2D, to destination: CLLocationCoordinate2D) async {
-        let request = MKDirections.Request()
-        request.source = MKMapItem(placemark: MKPlacemark(coordinate: origin))
-        request.destination = MKMapItem(placemark: MKPlacemark(coordinate: destination))
-        request.transportType = .walking
-        do {
-            let response = try await MKDirections(request: request).calculate()
-            guard let route = response.routes.first else { shadedRoute = nil; return }
-            shadedRoute = RouteResult(
-                nodeIds: [], coordinates: route.polyline.coordinates,
-                totalLength: route.distance, totalWeight: 0,
-                estimatedTime: route.expectedTravelTime, label: "Apple Maps (no graph coverage)", segments: []
-            )
-        } catch {
-            shadedRoute = nil
-        }
-    }
+}
+
+extension MKLocalSearchCompletion {
+    var stableID: String { "\(title)|\(subtitle)" }
 }

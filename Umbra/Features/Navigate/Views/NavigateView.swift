@@ -15,11 +15,11 @@ struct NavigateView: View {
     
     @State private var viewModel = NavigateViewModel()
     @Environment(\.dismiss) private var dismiss
-
+    
     @State private var selectedDestination: CLLocationCoordinate2D?
     @State private var selectedStepIndex: Int = 0
     @State private var hasAutoStarted = false
-
+    
     /// Tujuan yang dikirim dari MapView (hasil pencarian user)
     let initialDestination: CLLocationCoordinate2D
     let destinationTitle: String
@@ -29,7 +29,7 @@ struct NavigateView: View {
     /// di `ArrivalSummarySheet` — bukan swipe-to-dismiss — supaya user secara sadar
     /// mengonfirmasi sebelum kembali ke MapView.
     @State private var showArrivalSheet = false
-
+    
     init(
         locationManager: LocationManager,
         destination: CLLocationCoordinate2D,
@@ -41,56 +41,14 @@ struct NavigateView: View {
         self.destinationTitle = destinationTitle
         self.selectedRouteKind = selectedRouteKind
     }
-
+    
     var body: some View {
         ZStack(alignment: .top) {
-            MapReader { proxy in
-                Map(position: $viewModel.camera) {
-                    if let userCoordinate = locationManager.userLocation?.coordinate {
-                        Annotation("", coordinate: userCoordinate) {
-                            UserLocationIndicator(headingDegrees: coneRotationDegrees)
-                        }
-                        .annotationTitles(.hidden)
-                    }
-
-                    // Normal
-//                    if let route = viewModel.route {
-//                        MapPolyline(route.polyline)
-//                            .stroke(.blue, lineWidth: 6)
-//                    }
-                    
-                    if let shaded = viewModel.shadedRouteResult, !shaded.coordinates.isEmpty {
-                        MapPolyline(coordinates: shaded.coordinates)
-                            .stroke(.blue, lineWidth: 6)
-                    }
-
-                    Marker(destinationTitle, coordinate: currentDestination)
-                        .tint(.red)
-                }
-                .mapControls {
-                    MapCompass()
-                }
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 1)
-                        .onChanged { _ in viewModel.pauseFollowingCamera() }
-                )
-                .simultaneousGesture(
-                    MagnificationGesture()
-                        .onChanged { _ in viewModel.pauseFollowingCamera() }
-                )
-//                .onTapGesture { screenPoint in
-//                    guard !viewModel.isNavigating else { return }
-//                    if let coordinate = proxy.convert(screenPoint, from: .local) {
-//                        selectedDestination = coordinate
-//                    }
-//                }
-            }
-            .ignoresSafeArea(edges: .bottom)
-
-            // MARK: Area atas — status banner (idle/error) atau instruction carousel (saat navigasi)
+            navigateMapView
+            
             topOverlayArea
                 .padding(.top, 8)
-
+            
             // MARK: Tombol recenter — kiri bawah, tepat di atas card bawah
             VStack {
                 Spacer()
@@ -101,7 +59,7 @@ struct NavigateView: View {
                 }
             }
             .padding(.bottom, 130)
-
+            
             // MARK: Area bawah — panel "menyiapkan navigasi" (idle) atau summary card (saat navigasi)
             VStack {
                 Spacer()
@@ -113,9 +71,6 @@ struct NavigateView: View {
                         onEndRoute: {
                             viewModel.stopNavigation()
                             selectedDestination = nil
-                            // Tidak ada lagi tombol "Mulai Navigasi" untuk mulai ulang,
-                            // jadi begitu route diakhiri langsung tutup layar ini
-                            // dan kembali ke MapView, supaya user tidak "terjebak".
                             dismiss()
                         }
                     )
@@ -126,8 +81,6 @@ struct NavigateView: View {
         }
         .onAppear {
             locationManager.RequestUserLocation()
-            // Kalau lokasi user kebetulan sudah tersedia (misalnya sudah didapat
-            // sebelumnya di MapView), ini langsung memulai navigasi tanpa jeda.
             attemptAutoStartNavigation()
         }
         .onChange(of: viewModel.isNavigating) { _, isNavigating in
@@ -143,7 +96,7 @@ struct NavigateView: View {
         }
         .onChange(of: locationManager.userLocation?.timestamp) { _, _ in
             guard viewModel.isNavigating, let newLocation = locationManager.userLocation else { return }
-
+            
             viewModel.updateProgress(userLocation: newLocation)
             // `updateProgress` bisa saja baru mendeteksi kedatangan dan menghentikan
             // navigasi (isNavigating -> false) — kalau begitu, hentikan di sini supaya
@@ -153,7 +106,7 @@ struct NavigateView: View {
                 coordinate: newLocation.coordinate,
                 heading: effectiveNavigationHeading(location: newLocation)
             )
-
+            
             if viewModel.isOffRoute(newLocation) {
                 Task {
                     await viewModel.calculateRoute(from: newLocation.coordinate, to: currentDestination, kind: viewModel.selectedKind)
@@ -192,9 +145,52 @@ struct NavigateView: View {
             .interactiveDismissDisabled()
         }
     }
-
+    var navigateMapView: some View {
+        MapReader { proxy in
+            Map(position: $viewModel.camera) {
+                userAnnotation
+                
+                if let shaded = viewModel.shadedRouteResult, !shaded.coordinates.isEmpty {
+                    MapPolyline(coordinates: shaded.coordinates)
+                        .stroke(.blue, lineWidth: 6)
+                }
+                
+                destinationMarker
+            }
+            .mapControls {
+                MapCompass()
+            }
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 1)
+                    .onChanged { _ in viewModel.pauseFollowingCamera() }
+            )
+            .simultaneousGesture(
+                MagnificationGesture()
+                    .onChanged { _ in viewModel.pauseFollowingCamera() }
+            )
+        }
+        .ignoresSafeArea(edges: .bottom)
+    }
+    
+    @MapContentBuilder
+    var userAnnotation: some MapContent {
+        if let userCoordinate = locationManager.userLocation?.coordinate {
+            Annotation("", coordinate: userCoordinate) {
+                UserLocationIndicator(headingDegrees: coneRotationDegrees)
+            }
+            .annotationTitles(.hidden)
+        }
+    }
+    
+    @MapContentBuilder
+    var destinationMarker: some MapContent {
+        Marker(destinationTitle, coordinate: currentDestination)
+            .tint(.red)
+    }
+    
+    
     // MARK: - Auto-start navigasi
-
+    
     /// Coba mulai navigasi begitu lokasi user tersedia — menggantikan tombol
     /// "Mulai Navigasi" yang dulu ada di `startNavigationPanel`.
     private func attemptAutoStartNavigation() {
@@ -202,28 +198,28 @@ struct NavigateView: View {
         guard !hasAutoStarted, !viewModel.isNavigating else { return }
         // GPS belum dapat fix -> keluar dulu, nanti dicoba lagi lewat onChange di atas.
         guard let origin = locationManager.userLocation?.coordinate else { return }
-
+        
         hasAutoStarted = true
         Task {
             await viewModel.startNavigation(from: origin, to: currentDestination, kind: selectedRouteKind)
         }
     }
-
+    
     // MARK: - Heading helpers
-
+    
     private func effectiveNavigationHeading(location: CLLocation) -> CLLocationDirection {
         if let heading = locationManager.heading, heading.headingAccuracy >= 0 {
             return heading.trueHeading >= 0 ? heading.trueHeading : heading.magneticHeading
         }
         return location.course >= 0 ? location.course : 0
     }
-
+    
     private var coneRotationDegrees: Double? {
         guard let heading = locationManager.heading, heading.headingAccuracy >= 0 else { return nil }
         let value = heading.trueHeading >= 0 ? heading.trueHeading : heading.magneticHeading
         return viewModel.isNavigating ? 0 : value
     }
-
+    
     private var recenterButton: some View {
         Button {
             guard let location = locationManager.userLocation else { return }
@@ -240,111 +236,13 @@ struct NavigateView: View {
                 .shadow(color: .black.opacity(0.15), radius: 3)
         }
     }
-
-    // MARK: - ETA formatting
-
-    private var etaMinutesText: String {
-        "\(max(1, Int(viewModel.remainingTravelTime / 60)))"
-    }
-
-    private var arrivalTimeText: String {
-        let formatter = DateFormatter()
-        formatter.timeStyle = .short
-        return formatter.string(from: viewModel.estimatedArrivalDate)
-    }
-
-    private var remainingDistanceText: String {
-        let meters = viewModel.remainingDistance
-        if meters >= 1000 {
-            return String(format: "%.1f km", meters / 1000)
-        }
-        return "\(Int(meters)) m"
-    }
-
-    // MARK: - Top overlay (dipecah jadi beberapa computed property kecil
-    // supaya type-checker tidak menganalisis semuanya sebagai satu expression raksasa)
-
-    @ViewBuilder
-    private var topOverlayArea: some View {
-        VStack(spacing: 8) {
-            HStack {
-                //closeButton
-                Spacer()
-            }
-            .padding(.horizontal)
-
-            permissionAndErrorBanners
-            instructionCarousel
-        }
-    }
-
-    private var closeButton: some View {
-        Button {
-            dismiss()
-        } label: {
-            Image(systemName: "xmark")
-                .font(.system(size: 14, weight: .bold))
-                .foregroundStyle(.primary)
-                .padding(10)
-                .background(.regularMaterial, in: Circle())
-                .shadow(color: .black.opacity(0.15), radius: 3)
-        }
-    }
-
-    @ViewBuilder
-    private var permissionAndErrorBanners: some View {
-        if let error = viewModel.errorMessage {
-            statusBanner(text: error, color: .red)
-        }
-
-        if let locationError = locationManager.lastErrorMessage {
-            statusBanner(text: locationError, color: .orange)
-            openSettingsButton
-        } else if locationManager.userAuthorizationStatus == .notDetermined {
-            statusBanner(text: "Menunggu izin lokasi...", color: .blue)
-        } else if locationManager.userLocation == nil {
-            statusBanner(text: "Mencari sinyal GPS...", color: .blue)
-        }
-    }
-
-    private var openSettingsButton: some View {
-        Button("Buka Pengaturan") {
-            if let url = URL(string: UIApplication.openSettingsURLString) {
-                UIApplication.shared.open(url)
-            }
-        }
-        .font(.footnote)
-    }
-
-    @ViewBuilder
-    private var instructionCarousel: some View {
-        if viewModel.isNavigating, !viewModel.activeSteps.isEmpty {
-            InstructionCarouselCard(
-                steps: viewModel.activeSteps,
-                selectedIndex: $selectedStepIndex,
-                activeStepIndex: viewModel.currentStepIndex,
-                liveDistanceToActiveStep: viewModel.distanceToNextStep
-            )
-        }
-    }
-
-    @ViewBuilder
-    private func statusBanner(text: String, color: Color) -> some View {
-        Text(text)
-            .font(.footnote)
-            .padding(8)
-            .background(color.opacity(0.85), in: RoundedRectangle(cornerRadius: 8))
-            .foregroundStyle(.white)
-            .multilineTextAlignment(.center)
-            .padding(.horizontal)
-    }
-
+    
     private var currentDestination: CLLocationCoordinate2D {
         selectedDestination ?? initialDestination
     }
-
+    
     // MARK: - Panel "Menyiapkan Navigasi" (ditampilkan sebentar sebelum navigasi otomatis dimulai)
-
+    
     /// Dulu berisi tombol "Mulai Navigasi". Sekarang navigasi dimulai otomatis
     /// lewat `attemptAutoStartNavigation()`, jadi panel ini murni indikator
     /// bahwa app sedang menunggu GPS/menghitung rute — biasanya cuma tampil sebentar.
@@ -359,20 +257,106 @@ struct NavigateView: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
         .padding()
     }
+    
+    // MARK: - ETA formatting
+    
+    private var etaMinutesText: String {
+        "\(max(1, Int(viewModel.remainingTravelTime / 60)))"
+    }
+    
+    private var arrivalTimeText: String {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        return formatter.string(from: viewModel.estimatedArrivalDate)
+    }
+    
+    private var remainingDistanceText: String {
+        let meters = viewModel.remainingDistance
+        if meters >= 1000 {
+            return String(format: "%.1f km", meters / 1000)
+        }
+        return "\(Int(meters)) m"
+    }
+    
+    // MARK: - Top overlay (dipecah jadi beberapa computed property kecil
+    // supaya type-checker tidak menganalisis semuanya sebagai satu expression raksasa)
+    
+    private var closeButton: some View {
+        Button {
+            dismiss()
+        } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(.primary)
+                .padding(10)
+                .background(.regularMaterial, in: Circle())
+                .shadow(color: .black.opacity(0.15), radius: 3)
+        }
+    }
+    
+    private var openSettingsButton: some View {
+        Button("Buka Pengaturan") {
+            if let url = URL(string: UIApplication.openSettingsURLString) {
+                UIApplication.shared.open(url)
+            }
+        }
+        .font(.footnote)
+    }
+    
+    @ViewBuilder
+    private var topOverlayArea: some View {
+        VStack(spacing: 8) {
+            HStack {
+                //closeButton
+                Spacer()
+            }
+            .padding(.horizontal)
+            
+            permissionAndErrorBanners
+            instructionCarousel
+        }
+    }
+    
+    @ViewBuilder
+    private var permissionAndErrorBanners: some View {
+        if let error = viewModel.errorMessage {
+            statusBanner(text: error, color: .red)
+        }
+        
+        if let locationError = locationManager.lastErrorMessage {
+            statusBanner(text: locationError, color: .orange)
+            openSettingsButton
+        } else if locationManager.userAuthorizationStatus == .notDetermined {
+            statusBanner(text: "Menunggu izin lokasi...", color: .blue)
+        } else if locationManager.userLocation == nil {
+            statusBanner(text: "Mencari sinyal GPS...", color: .blue)
+        }
+    }
+    
+    @ViewBuilder
+    private var instructionCarousel: some View {
+        if viewModel.isNavigating, !viewModel.activeSteps.isEmpty {
+            InstructionCarouselCard(
+                steps: viewModel.activeSteps,
+                selectedIndex: $selectedStepIndex,
+                activeStepIndex: viewModel.currentStepIndex,
+                liveDistanceToActiveStep: viewModel.distanceToNextStep
+            )
+        }
+    }
+    
+    @ViewBuilder
+    private func statusBanner(text: String, color: Color) -> some View {
+        Text(text)
+            .font(.footnote)
+            .padding(8)
+            .background(color.opacity(0.85), in: RoundedRectangle(cornerRadius: 8))
+            .foregroundStyle(.white)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal)
+    }
 }
 
-#Preview {
-    NavigateView(
-        locationManager: LocationManager(),
-        destination: CLLocationCoordinate2D(latitude: -6.1754, longitude: 106.8272),
-        destinationTitle: "Monas"
-    )
-}
-
-/// Bottom sheet yang muncul di atas NavigateView begitu user sampai tujuan.
-/// Ikon tujuan + judul di kiri, tombol checkmark di kanan (satu-satunya cara
-/// menutup sheet ini — lihat `.interactiveDismissDisabled()` di pemanggilnya),
-/// emoji besar di tengah, lalu kalimat ringkasan "menit terik matahari yang dihindari".
 struct ArrivalSummarySheet: View {
     let info: ArrivalInfo
     var onDismiss: () -> Void
@@ -428,3 +412,19 @@ struct ArrivalSummarySheet: View {
         + Text(" you didn't have to deal with.")
     }
 }
+
+
+
+#Preview {
+    NavigateView(
+        locationManager: LocationManager(),
+        destination: CLLocationCoordinate2D(latitude: -6.1754, longitude: 106.8272),
+        destinationTitle: "Monas"
+    )
+}
+
+/// Bottom sheet yang muncul di atas NavigateView begitu user sampai tujuan.
+/// Ikon tujuan + judul di kiri, tombol checkmark di kanan (satu-satunya cara
+/// menutup sheet ini — lihat `.interactiveDismissDisabled()` di pemanggilnya),
+/// emoji besar di tengah, lalu kalimat ringkasan "menit terik matahari yang dihindari".
+

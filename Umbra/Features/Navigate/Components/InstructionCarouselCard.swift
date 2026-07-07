@@ -9,7 +9,6 @@ import SwiftUI
 import MapKit
 
 struct InstructionCarouselCard: View {
-//    let steps: [MKRoute.Step]
     let steps: [NavigationStep]
     @Binding var selectedIndex: Int
 
@@ -17,31 +16,6 @@ struct InstructionCarouselCard: View {
     let activeStepIndex: Int
     /// Jarak live (real-time, dari GPS) ke step yang sedang aktif
     let liveDistanceToActiveStep: CLLocationDistance
-
-//    var body: some View {
-//        VStack(spacing: 10) {
-//            TabView(selection: $selectedIndex) {
-//                ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
-//                    InstructionCardContent(
-//                        step: step,
-//                        distanceText: distanceText(for: index, step: step)
-//                    )
-//                    .tag(index)
-//                    .padding(.horizontal, 20)
-//                }
-//            }
-//            .tabViewStyle(.page(indexDisplayMode: .never))
-//            .frame(height: 92)
-//
-//            if steps.count > 1 {
-//                PageDots(count: steps.count, currentIndex: selectedIndex)
-//            }
-//        }
-//        .padding(.vertical, 14)
-//        .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 22))
-//        .shadow(color: .black.opacity(0.15), radius: 10, y: 4)
-//        .padding(.horizontal)
-//    }
     
     var body: some View {
         VStack(spacing: 10) {
@@ -81,7 +55,6 @@ struct InstructionCarouselCard: View {
 }
 
 private struct InstructionCardContent: View {
-//    let step: MKRoute.Step
     let step: NavigationStep
     let distanceText: String
 
@@ -141,7 +114,3 @@ private struct PageDots: View {
         }
     }
 }
-
-//#Preview {
-//    InstructionCarouselCard(steps: <#[MKRoute.Step]#>, selectedIndex: <#Binding<Int>#>, activeStepIndex: <#Int#>, liveDistanceToActiveStep: <#CLLocationDistance#>)
-//}

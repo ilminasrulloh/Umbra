@@ -9,10 +9,12 @@ import SwiftUI
 struct DirectionsSheet: View {
     let originTitle: String
     let destinationTitle: String
-    let options: [RouteOption]
-    var showLegend: Bool = false
     var selectedKind: String
+    
+    let options: [RouteOption]
     var onSelectOption: (RouteOption) -> Void
+    
+    var showLegend: Bool = false
     var isExpanded: Bool
     
     var collapsedHeight: CGFloat
@@ -20,24 +22,27 @@ struct DirectionsSheet: View {
     
     /// X button tapped, or dragged down while already collapsed.
     var onClose: () -> Void
+    
     /// Dragged up past the midpoint while collapsed -> parent switches to expanded.
     var onExpand: () -> Void
+    
     /// Dragged down past the midpoint while expanded -> parent switches to collapsed.
     var onCollapse: () -> Void
+    
     /// Tapped the origin row -> parent should reopen the search sheet
     /// (BottomPanelSheetView) so the user can change the starting point.
     var onEditOrigin: () -> Void
+    
     /// Tapped the destination row -> parent should reopen the search sheet
     /// so the user can change where they're going.
     var onEditDestination: () -> Void
     
     var onStart: (RouteOption) -> Void
+    
     @GestureState private var dragState: CGFloat = 0
     
     private var baseHeight: CGFloat { isExpanded ? expandedHeight : collapsedHeight }
     
-    /// The height actually rendered — follows the finger 1:1 while dragging,
-    /// clamped so you can't drag past either resting size.
     private var liveHeight: CGFloat {
         min(max(baseHeight - dragState, collapsedHeight), expandedHeight)
     }
@@ -47,13 +52,13 @@ struct DirectionsSheet: View {
         options.first(where: { $0.isRecommended })
     }
     
+    // clicked route
     private var chosenOption: RouteOption? {
         options.first(where: { $0.kind == selectedKind })
     }
     
     var body: some View {
         VStack(spacing: 0) {
-            // Drag handle — swipe down to close/collapse, swipe up to expand.
             Capsule()
                 .fill(Color(.tertiaryLabel))
                 .frame(width: 36, height: 5)
@@ -161,28 +166,6 @@ struct DirectionsSheet: View {
     }
 }
 
-private struct RouteEndpointsRow: View {
-    let originTitle: String
-    let destinationTitle: String
-    var onEditDestination: () -> Void
-    
-    var body: some View {
-        VStack(spacing: 0) {
-            LocationRow(kind: .origin, title: originTitle)
-            
-            Divider()
-                .padding(.leading, 54)
-            
-            Button(action: onEditDestination) {
-                LocationRow(kind: .destination, title: destinationTitle)
-            }
-            .buttonStyle(.plain)
-        }
-        .background(Color(.secondarySystemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-    }
-}
-
 /// The "Exposed / Shaded" legend shown on the map screen variant.
 struct RouteLegendView: View {
     var body: some View {
@@ -205,38 +188,24 @@ struct RouteLegendView: View {
     }
 }
 
-//#Preview("Collapsed (Gambar 2)") {
-//    DirectionsSheet(
-//        originTitle: "My Location",
-//        destinationTitle: "The Breeze",
-//        options: RouteOption.sample,
-//        showLegend: true,
-//        isExpanded: false,
-//        collapsedHeight: 260,
-//        expandedHeight: 700,
-//        onClose: {},
-//        onExpand: {},
-//        onCollapse: {},
-//        onEditOrigin: {},
-//        onEditDestination: {},
-//        onStart: { print("Start: \($0.title)") }
-//    )
-//}
-//
-//#Preview("Expanded (Gambar 3)") {
-//    DirectionsSheet(
-//        originTitle: "My Location",
-//        destinationTitle: "The Breeze",
-//        options: RouteOption.sample,
-//        showLegend: true,
-//        isExpanded: true,
-//        collapsedHeight: 260,
-//        expandedHeight: 700,
-//        onClose: {},
-//        onExpand: {},
-//        onCollapse: {},
-//        onEditOrigin: {},
-//        onEditDestination: {},
-//        onStart: { print("Start: \($0.title)") }
-//    )
-//}
+private struct RouteEndpointsRow: View {
+    let originTitle: String
+    let destinationTitle: String
+    var onEditDestination: () -> Void
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            LocationRow(kind: .origin, title: originTitle)
+            
+            Divider()
+                .padding(.leading, 54)
+            
+            Button(action: onEditDestination) {
+                LocationRow(kind: .destination, title: destinationTitle)
+            }
+            .buttonStyle(.plain)
+        }
+        .background(Color(.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+}

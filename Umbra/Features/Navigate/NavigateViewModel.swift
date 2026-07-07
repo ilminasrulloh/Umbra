@@ -184,6 +184,14 @@ final class RoutePlanner {
         self.walkingSpeed = walkingSpeed
     }
     
+    /// We only need the shadiest route for navigation right now — kept as its own
+    /// method (rather than the old shadiest/fastest/balanced tuple) since
+    /// NavigateViewModel isn't exposing a route-type picker.
+    func shadiestRoute(from start: String, to end: String) throws -> RouteResult {
+        let edges = try dijkstra(from: start, to: end) { $0.weight }
+        return buildResult(from: edges, label: "shaded")
+    }
+    
     private func buildResult(from edges: [RouteEdge], label: String) -> RouteResult {
         guard let first = edges.first else {
             return RouteResult(nodeIds: [], coordinates: [], totalLength: 0, totalWeight: 0, estimatedTime: 0, label: label, segments: [])
@@ -261,61 +269,6 @@ final class RoutePlanner {
         }
         return path.reversed()
     }
-    
-    //    private func buildResult(from edges: [RouteEdge], label: String) -> RouteResult {
-    //        guard let first = edges.first else {
-    //            return RouteResult(nodeIds: [], coordinates: [], totalLength: 0, totalWeight: 0, estimatedTime: 0, label: label)
-    //        }
-    //
-    //        var nodeIds = [first.source]
-    //        var coordinates: [CLLocationCoordinate2D] = []
-    //        var totalLength = 0.0
-    //        var totalWeight = 0.0
-    //
-    //        for edge in edges {
-    //            nodeIds.append(edge.target)
-    //            totalLength += edge.length
-    //            totalWeight += edge.weight
-    //            let coords = edge.coordinates.map { $0.coordinate }
-    //            if coordinates.isEmpty {
-    //                coordinates.append(contentsOf: coords)
-    //            } else {
-    //                coordinates.append(contentsOf: coords.dropFirst())
-    //            }
-    //        }
-    //
-    //        return RouteResult(
-    //            nodeIds: nodeIds,
-    //            coordinates: coordinates,
-    //            totalLength: totalLength,
-    //            totalWeight: totalWeight,
-    //            estimatedTime: totalLength / walkingSpeed,
-    //            label: label
-    //        )
-    //    }
-    
-    /// We only need the shadiest route for navigation right now — kept as its own
-    /// method (rather than the old shadiest/fastest/balanced tuple) since
-    /// NavigateViewModel isn't exposing a route-type picker.
-    func shadiestRoute(from start: String, to end: String) throws -> RouteResult {
-        let edges = try dijkstra(from: start, to: end) { $0.weight }
-        return buildResult(from: edges, label: "shaded")
-    }
-    
-    private static func indoorPriorityCost(for edge: RouteEdge) -> Double {
-        let environmentPenalty: Double
-        switch edge.environment {
-        case .indoor: environmentPenalty = 1
-        case .shaded: environmentPenalty = 4
-        case .sunny:  environmentPenalty = 10
-        }
-        return edge.length * environmentPenalty
-    }
-    
-    func shadedRoute(from start: String, to end: String) throws -> RouteResult {
-        let edges = try dijkstra(from: start, to: end, cost: Self.indoorPriorityCost)
-        return buildResult(from: edges, label: "Indoor-priority")
-    }
 }
 
 @MainActor
@@ -323,143 +276,20 @@ final class RoutePlanner {
 final class NavigateViewModel: NSObject {
     
     var shadedRouteResult: RouteResult?
-    //    var route: MKRoute?
     var camera: MapCameraPosition = .automatic
     var currentStepIndex: Int = 0
     var distanceToNextStep: CLLocationDistance = 0
     var isNavigating = false
     var errorMessage: String?
-    
-    /// Jadi `true` sesaat setelah user terdeteksi sampai di tujuan (lihat `checkArrival`).
-    /// View mengamati ini lewat `onChange` untuk menutup NavigateView & menampilkan
-    /// bottom sheet "kamu sudah sampai" di MapView.
+
     var didArrive = false
+    var isFollowingUser = true
     
-    /// Snapshot rute terakhir SEBELUM `stopNavigation()` membersihkannya — dipakai
-    /// untuk menghitung statistik "menit terik matahari yang dihindari" di sheet kedatangan.
-    private(set) var arrivalSummary: RouteResult?
-    
-    /// Titik tujuan asli (bukan hasil snap ke graph) — disimpan terpisah supaya
-    /// deteksi "sudah sampai" selalu dibandingkan ke titik yang benar-benar diminta user,
-    /// bukan ke titik terakhir polyline (yang bisa sedikit berbeda karena stitching).
-    private var destinationCoordinate: CLLocationCoordinate2D?
-    
-    /// Radius kedatangan dalam meter. Sengaja dibuat kecil (2m) sesuai kebutuhan produk,
-    /// supaya navigasi otomatis selesai begitu user mendekati tujuan tanpa harus berdiri
-    /// TEPAT di titik koordinatnya (yang nyaris mustahil dengan akurasi GPS biasa).
-    let arrivalRadiusMeters: CLLocationDistance = 20
-    
-    /// Estimasi menit "waktu di bawah sinar matahari" yang berhasil dihindari sepanjang
-    /// rute yang baru saja selesai — dipakai teks di sheet kedatangan. `nil` kalau belum
-    /// ada rute yang selesai (mis. tampilan preview sebelum navigasi pertama dimulai).
     var minutesOfSunAvoided: Int? {
         guard let arrivalSummary, arrivalSummary.totalLength > 0 else { return nil }
         let shadedFraction = arrivalSummary.shadedLength / arrivalSummary.totalLength
         let minutes = shadedFraction * arrivalSummary.estimatedTimeMinutes
         return max(1, Int(minutes.rounded()))
-    }
-    
-    private var graph: RouteGraph?
-    private var planner: RoutePlanner?
-    
-    // MARK: - Camera smoothing
-    
-    /// Nilai "sumber kebenaran" dari GPS/kompas — bisa datang tidak teratur & noisy
-    private var targetCoordinate: CLLocationCoordinate2D?
-    private var targetHeading: CLLocationDirection = 0
-    
-    /// Nilai yang benar-benar dipakai kamera — bergerak sedikit demi sedikit menuju target
-    /// tiap tick, bukan langsung "melompat". Inilah yang bikin gerakannya halus.
-    private var displayedCoordinate: CLLocationCoordinate2D?
-    private var displayedHeading: CLLocationDirection = 0
-    
-    private var cameraTimer: AnyCancellable?
-    /// 30x per detik — cukup halus secara visual, tanpa terlalu boros baterai
-    private let cameraTickInterval: TimeInterval = 1.0 / 30.0
-    /// Porsi jarak ke target yang ditempuh tiap tick. Makin kecil = makin halus tapi makin "lag" mengikuti;
-    /// makin besar = makin responsif tapi makin terasa patah. 0.12–0.15 biasanya pas untuk jalan kaki.
-    private let smoothingFactor: Double = 0.12
-
-    // MARK: - User camera override
-    /// Selama ini `true`, `applyCamera()` boleh menimpa binding `camera`. Begitu user
-    /// mulai gesture (pan/pinch) di peta, ini di-set `false` supaya loop kamera BERHENTI
-    /// menimpa hasil gesture tsb. Tanpa ini, tiap tick (33ms) langsung "menarik paksa"
-    /// kamera kembali ke posisi navigasi, sehingga zoom/pan terasa tidak berfungsi sama sekali.
-    var isFollowingUser: Bool = true
-    private var followResumeTask: Task<Void, Never>?
-    /// Berapa lama menunggu sejak gesture terakhir sebelum kamera otomatis kembali "mengikuti" user.
-    private let followResumeDelay: TimeInterval = 4.0
-
-    /// Panggil ini dari gesture handler di View saat user mulai men-drag/pinch peta.
-    func pauseFollowingCamera() {
-        isFollowingUser = false
-        followResumeTask?.cancel()
-        followResumeTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64((self?.followResumeDelay ?? 4.0) * 1_000_000_000))
-            guard let self, !Task.isCancelled else { return }
-            self.isFollowingUser = true
-        }
-    }
-
-    /// Panggil ini saat user menekan tombol "recenter" — langsung resume follow mode.
-    func resumeFollowingCamera() {
-        followResumeTask?.cancel()
-        followResumeTask = nil
-        isFollowingUser = true
-    }
-    
-    private var maneuvers: [(instruction: String, coordinate: CLLocationCoordinate2D, distanceFromStart: CLLocationDistance, nodeId: String?)] = []
-    private var cumulativeDistances: [CLLocationDistance] = []
-    
-    
-    //Ini yang jalanna normal apple
-    /// Instruksi yang benar-benar punya teks (step pertama biasanya kosong)
-    //    var activeSteps: [MKRoute.Step] {
-    //        route?.steps.filter { !$0.instructions.isEmpty } ?? []
-    //    }
-    
-    /// Estimasi sisa jarak dari instruksi yang sedang aktif sampai tujuan akhir.
-    /// Dijumlah dari panjang tiap step yang tersisa — pendekatan sederhana untuk demo,
-    /// bukan jarak presisi dari posisi persis user saat ini.
-    //    var remainingDistance: CLLocationDistance {
-    //        let steps = activeSteps
-    //        guard currentStepIndex < steps.count else { return 0 }
-    //        return steps[currentStepIndex...].reduce(0) { $0 + $1.distance }
-    //    }
-    
-    /// Estimasi sisa waktu tempuh, dihitung proporsional terhadap sisa jarak
-    /// dibanding total jarak & waktu tempuh rute (MKRoute tidak menyediakan estimasi per-step).
-    //    var remainingTravelTime: TimeInterval {
-    //        guard let route, route.distance > 0 else { return 0 }
-    //        let fraction = remainingDistance / route.distance
-    //        return route.expectedTravelTime * fraction
-    //    }
-    //
-    //    var estimatedArrivalDate: Date {
-    //        Date().addingTimeInterval(remainingTravelTime)
-    //    }
-    
-    //    func startNavigation(from origin: CLLocationCoordinate2D, to destination: CLLocationCoordinate2D) async {
-    //        await calculateRoute(from: origin, to: destination)
-    //        if route != nil {
-    //            isNavigating = true
-    //            startCameraLoop()
-    //        }
-    //    }
-    //
-    //    func stopNavigation() {
-    //        isNavigating = false
-    //        route = nil
-    //        currentStepIndex = 0
-    //        stopCameraLoop()
-    //        displayedCoordinate = nil // biar navigasi berikutnya snap dari posisi baru, bukan interpolasi dari posisi lama
-    //        camera = .automatic
-    //    }
-    
-    // Ini yang shaded
-    override init() {
-        super.init()
-        loadGraph()
     }
     
     var activeSteps: [NavigationStep] {
@@ -491,8 +321,114 @@ final class NavigateViewModel: NSObject {
         Date().addingTimeInterval(remainingTravelTime)
     }
     
+    /// Radius kedatangan dalam meter. Sengaja dibuat kecil (2m) sesuai kebutuhan produk,
+    /// supaya navigasi otomatis selesai begitu user mendekati tujuan tanpa harus berdiri
+    /// TEPAT di titik koordinatnya (yang nyaris mustahil dengan akurasi GPS biasa).
+    let arrivalRadiusMeters: CLLocationDistance = 20
+    
+    /// Snapshot rute terakhir SEBELUM `stopNavigation()` membersihkannya — dipakai
+    /// untuk menghitung statistik "menit terik matahari yang dihindari" di sheet kedatangan.
+    private(set) var arrivalSummary: RouteResult?
+    
+    /// Titik tujuan asli (bukan hasil snap ke graph) — disimpan terpisah supaya
+    /// deteksi "sudah sampai" selalu dibandingkan ke titik yang benar-benar diminta user,
+    /// bukan ke titik terakhir polyline (yang bisa sedikit berbeda karena stitching).
+    private var destinationCoordinate: CLLocationCoordinate2D?
+    
+    /// Estimasi menit "waktu di bawah sinar matahari" yang berhasil dihindari sepanjang
+    /// rute yang baru saja selesai — dipakai teks di sheet kedatangan. `nil` kalau belum
+    /// ada rute yang selesai (mis. tampilan preview sebelum navigasi pertama dimulai).
+    
+    private var graph: RouteGraph?
+    private var planner: RoutePlanner?
+    
+    // MARK: - Camera smoothing
+    
+    /// Nilai "sumber kebenaran" dari GPS/kompas — bisa datang tidak teratur & noisy
+    private var targetCoordinate: CLLocationCoordinate2D?
+    private var targetHeading: CLLocationDirection = 0
+    
+    /// Nilai yang benar-benar dipakai kamera — bergerak sedikit demi sedikit menuju target
+    /// tiap tick, bukan langsung "melompat". Inilah yang bikin gerakannya halus.
+    private var displayedCoordinate: CLLocationCoordinate2D?
+    private var displayedHeading: CLLocationDirection = 0
+    
+    private var cameraTimer: AnyCancellable?
+    /// 30x per detik — cukup halus secara visual, tanpa terlalu boros baterai
+    private let cameraTickInterval: TimeInterval = 1.0 / 30.0
+    /// Porsi jarak ke target yang ditempuh tiap tick. Makin kecil = makin halus tapi makin "lag" mengikuti;
+    /// makin besar = makin responsif tapi makin terasa patah. 0.12–0.15 biasanya pas untuk jalan kaki.
+    private let smoothingFactor: Double = 0.12
+
+    // MARK: - User camera override
+    /// Selama ini `true`, `applyCamera()` boleh menimpa binding `camera`. Begitu user
+    /// mulai gesture (pan/pinch) di peta, ini di-set `false` supaya loop kamera BERHENTI
+    /// menimpa hasil gesture tsb. Tanpa ini, tiap tick (33ms) langsung "menarik paksa"
+    /// kamera kembali ke posisi navigasi, sehingga zoom/pan terasa tidak berfungsi sama sekali.
+    private var followResumeTask: Task<Void, Never>?
+    /// Berapa lama menunggu sejak gesture terakhir sebelum kamera otomatis kembali "mengikuti" user.
+    private let followResumeDelay: TimeInterval = 4.0
+
+    private var maneuvers: [(instruction: String, coordinate: CLLocationCoordinate2D, distanceFromStart: CLLocationDistance, nodeId: String?)] = []
+    private var cumulativeDistances: [CLLocationDistance] = []
+    
     private(set) var selectedKind: String = "shaded"
     
+    private let snapThresholdMeters: CLLocationDistance = 20
+    
+    override init() {
+        super.init()
+        loadGraph()
+    }
+    
+    
+    // CAMERA SETTINGS
+    
+    /// Panggil ini dari gesture handler di View saat user mulai men-drag/pinch peta.
+    func pauseFollowingCamera() {
+        isFollowingUser = false
+        followResumeTask?.cancel()
+        followResumeTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64((self?.followResumeDelay ?? 4.0) * 1_000_000_000))
+            guard let self, !Task.isCancelled else { return }
+            self.isFollowingUser = true
+        }
+    }
+
+    /// Panggil ini saat user menekan tombol "recenter" — langsung resume follow mode.
+    func resumeFollowingCamera() {
+        followResumeTask?.cancel()
+        followResumeTask = nil
+        isFollowingUser = true
+    }
+    
+    /// Dipanggil setiap ada data baru dari GPS/kompas. Ini TIDAK langsung menggerakkan kamera —
+    /// cuma update "target" tujuan. Kamera yang sebenarnya digerakkan pelan-pelan oleh `tickCamera()`
+    /// lewat timer, supaya hasilnya halus walau data GPS/kompas datangnya tidak teratur & noisy.
+    func setCameraTarget(coordinate: CLLocationCoordinate2D, heading: CLLocationDirection) {
+        targetCoordinate = coordinate
+        targetHeading = heading
+        
+        // Frame pertama: langsung snap ke posisi awal, tidak ada posisi lama untuk diinterpolasi dari situ
+        if displayedCoordinate == nil {
+            displayedCoordinate = coordinate
+            displayedHeading = heading
+            applyCamera()
+        }
+    }
+    
+    /// Dipakai tombol "recenter" — langsung pindah kamera seketika (tanpa interpolasi),
+    /// karena ini aksi eksplisit dari user yang mengharapkan respons instan.
+    func recenterCamera(to coordinate: CLLocationCoordinate2D, heading: CLLocationDirection) {
+        resumeFollowingCamera()
+        targetCoordinate = coordinate
+        targetHeading = heading
+        displayedCoordinate = coordinate
+        displayedHeading = heading
+        applyCamera()
+    }
+    
+    // NAVIGATION SETTINGS
     func startNavigation(from origin: CLLocationCoordinate2D, to destination: CLLocationCoordinate2D, kind: String) async {
         selectedKind = kind
         destinationCoordinate = destination
@@ -517,79 +453,7 @@ final class NavigateViewModel: NSObject {
         isFollowingUser = true
     }
     
-    /// Dipanggil begitu `checkArrival` mendeteksi user sudah dalam radius tujuan.
-    /// Menyimpan snapshot rute (untuk statistik di sheet kedatangan) sebelum
-    /// `stopNavigation()` membersihkan state navigasi seperti biasa.
-    private func handleArrival() {
-        guard !didArrive else { return }
-        arrivalSummary = shadedRouteResult
-        didArrive = true
-        stopNavigation()
-    }
-    
-    /// Cek apakah user sudah berada dalam `arrivalRadiusMeters` dari titik tujuan.
-    /// Dipanggil dari `updateProgress` tiap ada update lokasi baru selama navigasi.
-    private func checkArrival(userLocation: CLLocation) {
-        guard !didArrive, let destinationCoordinate else { return }
-        let destinationLocation = CLLocation(
-            latitude: destinationCoordinate.latitude,
-            longitude: destinationCoordinate.longitude
-        )
-        if userLocation.distance(from: destinationLocation) <= arrivalRadiusMeters {
-            handleArrival()
-        }
-    }
-    
-    
-    private func calculateNativeRoute(from origin: CLLocationCoordinate2D, to destination: CLLocationCoordinate2D) async {
-        let request = MKDirections.Request()
-        request.source = MKMapItem(placemark: MKPlacemark(coordinate: origin))
-        request.destination = MKMapItem(placemark: MKPlacemark(coordinate: destination))
-        request.transportType = .walking
-        
-        do {
-            let response = try await MKDirections(request: request).calculate()
-            guard let route = response.routes.first else {
-                errorMessage = "Rute tidak ditemukan"
-                return
-            }
-            let result = RouteResult(
-                nodeIds: [],
-                coordinates: route.polyline.coordinates,
-                totalLength: route.distance,
-                totalWeight: 0,
-                estimatedTime: route.expectedTravelTime,
-                label: "Fastest (Apple Maps)",
-                segments: []
-            )
-            self.shadedRouteResult = result
-            self.currentStepIndex = 0
-            self.errorMessage = nil
-            buildManeuvers(from: result)
-        } catch {
-            self.errorMessage = "Gagal menghitung rute: \(error.localizedDescription)"
-        }
-    }
-    
-    /// Dipanggil setiap ada update lokasi user untuk maju ke instruksi berikutnya
-    //    func updateProgress(userLocation: CLLocation) {
-    //        let steps = activeSteps
-    //        guard currentStepIndex < steps.count else { return }
-    //
-    //        let step = steps[currentStepIndex]
-    //        guard step.polyline.pointCount > 0 else { return }
-    //
-    //        let stepCoordinate = step.polyline.points()[0].coordinate
-    //        let stepLocation = CLLocation(latitude: stepCoordinate.latitude, longitude: stepCoordinate.longitude)
-    //        let distance = userLocation.distance(from: stepLocation)
-    //        distanceToNextStep = distance
-    //
-    //        // Kalau sudah dekat (<25m) dengan titik instruksi, lanjut ke step berikutnya
-    //        if distance < 25, currentStepIndex < steps.count - 1 {
-    //            currentStepIndex += 1
-    //        }
-    //    }
-    
+    // ROUTING
     func calculateRoute(from origin: CLLocationCoordinate2D, to destination: CLLocationCoordinate2D, kind: String) async {
         if kind == "fastest" {
             await calculateNativeRoute(from: origin, to: destination)
@@ -633,6 +497,36 @@ final class NavigateViewModel: NSObject {
         }
     }
     
+    func calculateNativeRoute(from origin: CLLocationCoordinate2D, to destination: CLLocationCoordinate2D) async {
+        let request = MKDirections.Request()
+        request.source = MKMapItem(placemark: MKPlacemark(coordinate: origin))
+        request.destination = MKMapItem(placemark: MKPlacemark(coordinate: destination))
+        request.transportType = .walking
+        
+        do {
+            let response = try await MKDirections(request: request).calculate()
+            guard let route = response.routes.first else {
+                errorMessage = "Rute tidak ditemukan"
+                return
+            }
+            let result = RouteResult(
+                nodeIds: [],
+                coordinates: route.polyline.coordinates,
+                totalLength: route.distance,
+                totalWeight: 0,
+                estimatedTime: route.expectedTravelTime,
+                label: "Fastest (Apple Maps)",
+                segments: []
+            )
+            self.shadedRouteResult = result
+            self.currentStepIndex = 0
+            self.errorMessage = nil
+            buildManeuvers(from: result)
+        } catch {
+            self.errorMessage = "Gagal menghitung rute: \(error.localizedDescription)"
+        }
+    }
+    
     func updateProgress(userLocation: CLLocation) {
         checkArrival(userLocation: userLocation)
         guard !didArrive else { return }
@@ -662,33 +556,7 @@ final class NavigateViewModel: NSObject {
             distanceToNextStep = userLocation.distance(from: maneuverLocation)
         }
     }
-    
-    /// Dipanggil setiap ada data baru dari GPS/kompas. Ini TIDAK langsung menggerakkan kamera —
-    /// cuma update "target" tujuan. Kamera yang sebenarnya digerakkan pelan-pelan oleh `tickCamera()`
-    /// lewat timer, supaya hasilnya halus walau data GPS/kompas datangnya tidak teratur & noisy.
-    func setCameraTarget(coordinate: CLLocationCoordinate2D, heading: CLLocationDirection) {
-        targetCoordinate = coordinate
-        targetHeading = heading
-        
-        // Frame pertama: langsung snap ke posisi awal, tidak ada posisi lama untuk diinterpolasi dari situ
-        if displayedCoordinate == nil {
-            displayedCoordinate = coordinate
-            displayedHeading = heading
-            applyCamera()
-        }
-    }
-    
-    /// Dipakai tombol "recenter" — langsung pindah kamera seketika (tanpa interpolasi),
-    /// karena ini aksi eksplisit dari user yang mengharapkan respons instan.
-    func recenterCamera(to coordinate: CLLocationCoordinate2D, heading: CLLocationDirection) {
-        resumeFollowingCamera()
-        targetCoordinate = coordinate
-        targetHeading = heading
-        displayedCoordinate = coordinate
-        displayedHeading = heading
-        applyCamera()
-    }
-    
+
     /// Cek apakah user sudah melenceng dari garis rute lebih dari threshold (meter)
     func isOffRoute(_ location: CLLocation, threshold: CLLocationDistance = 50) -> Bool {
         //        guard let route else { return false }
@@ -714,7 +582,55 @@ final class NavigateViewModel: NSObject {
         return minDistance > threshold
     }
     
-    // MARK: - Graph loading
+    func calculateDistance(a: CLLocationCoordinate2D, b: CLLocationCoordinate2D) -> CLLocationDistance {
+        CLLocation(latitude: a.latitude, longitude: a.longitude).distance(from: CLLocation(latitude: b.latitude, longitude: b.longitude))
+    }
+    
+    func distanceFromPoint(_ point: MKMapPoint, toSegment a: MKMapPoint, and b: MKMapPoint) -> Double {
+        let dx = b.x - a.x
+        let dy = b.y - a.y
+        
+        if dx == 0 && dy == 0 {
+            return point.distance(to: a)
+        }
+        
+        let t = ((point.x - a.x) * dx + (point.y - a.y) * dy) / (dx * dx + dy * dy)
+        let clampedT = max(0, min(1, t))
+        let projected = MKMapPoint(x: a.x + clampedT * dx, y: a.y + clampedT * dy)
+        return point.distance(to: projected)
+    }
+    
+    // END NAVIGATION
+    
+    /// Dipanggil begitu `checkArrival` mendeteksi user sudah dalam radius tujuan.
+    /// Menyimpan snapshot rute (untuk statistik di sheet kedatangan) sebelum
+    /// `stopNavigation()` membersihkan state navigasi seperti biasa.
+    private func handleArrival() {
+        guard !didArrive else { return }
+        arrivalSummary = shadedRouteResult
+        didArrive = true
+        stopNavigation()
+    }
+    
+    
+    
+    /// Cek apakah user sudah berada dalam `arrivalRadiusMeters` dari titik tujuan.
+    /// Dipanggil dari `updateProgress` tiap ada update lokasi baru selama navigasi.
+    private func checkArrival(userLocation: CLLocation) {
+        guard !didArrive, let destinationCoordinate else { return }
+        let destinationLocation = CLLocation(
+            latitude: destinationCoordinate.latitude,
+            longitude: destinationCoordinate.longitude
+        )
+        if userLocation.distance(from: destinationLocation) <= arrivalRadiusMeters {
+            handleArrival()
+        }
+    }
+    
+    
+    
+    
+    // GRAPH/JSON LOADING
     
     private func loadGraph() {
         guard let url = Bundle.main.url(forResource: "1400", withExtension: "json") else {
@@ -730,13 +646,7 @@ final class NavigateViewModel: NSObject {
         }
     }
     
-    // MARK: - Approach/trail legs + stitching
-    
-    private let snapThresholdMeters: CLLocationDistance = 20
-    
-    private func calculateDistance(a: CLLocationCoordinate2D, b: CLLocationCoordinate2D) -> CLLocationDistance {
-        CLLocation(latitude: a.latitude, longitude: a.longitude).distance(from: CLLocation(latitude: b.latitude, longitude: b.longitude))
-    }
+    // STITCHING ROUTES
     
     /// Bridges the gap between an arbitrary point (user's real origin/destination)
     /// and the nearest graph node, using a short native MapKit walking leg. This is
@@ -790,7 +700,7 @@ final class NavigateViewModel: NSObject {
         )
     }
     
-    // MARK: - Turn-by-turn derivation
+    // MANEUVERS
     
     /// The JSON graph doesn't carry instruction text like MKRoute.steps does, so we
     /// derive simple "turn left/right" maneuvers from bearing changes along the
@@ -865,7 +775,7 @@ final class NavigateViewModel: NSObject {
         return atan2(y, x) * 180 / .pi
     }
     
-    // MARK: - Camera loop
+    // CAMERA LOOP
     
     private func startCameraLoop() {
         stopCameraLoop()
@@ -915,20 +825,6 @@ final class NavigateViewModel: NSObject {
         var result = (current + delta * factor).truncatingRemainder(dividingBy: 360)
         if result < 0 { result += 360 }
         return result
-    }
-    
-    private func distanceFromPoint(_ point: MKMapPoint, toSegment a: MKMapPoint, and b: MKMapPoint) -> Double {
-        let dx = b.x - a.x
-        let dy = b.y - a.y
-        
-        if dx == 0 && dy == 0 {
-            return point.distance(to: a)
-        }
-        
-        let t = ((point.x - a.x) * dx + (point.y - a.y) * dy) / (dx * dx + dy * dy)
-        let clampedT = max(0, min(1, t))
-        let projected = MKMapPoint(x: a.x + clampedT * dx, y: a.y + clampedT * dy)
-        return point.distance(to: projected)
     }
 }
 

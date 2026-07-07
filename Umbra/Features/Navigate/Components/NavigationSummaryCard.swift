@@ -58,7 +58,6 @@ struct NavigationSummaryCard: View {
         .shadow(color: .black.opacity(0.15), radius: 10, y: -2)
         .padding(.horizontal)
         .padding(.bottom, 8)
-        // Swipe ke atas untuk expand, swipe ke bawah untuk collapse
         .gesture(
             DragGesture()
                 .onEnded { value in
@@ -90,7 +89,3 @@ struct NavigationSummaryCard: View {
         }
     }
 }
-
-//#Preview {
-//    NavigationSummaryCard(etaMinutesText: "7 mins", arrivalTimeText: "07:00", remainingDistanceText: "12 m", onEndRoute: <#() -> Void#>)
-//}

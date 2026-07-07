@@ -23,12 +23,14 @@ enum DirectionsSheetState: Equatable {
 }
 
 struct MapView: View {
-    @State private var viewModel = MapViewModel()
     @State var expandUVIndexButton = false
     @State var expandWeatherButton = false
     @State var showBottomPanelSheet = true
     @State var currentPresentationDetents: PresentationDetent = .fraction(0.1)
     @FocusState var clickedTextField: Field?
+    
+    let locationManager = LocationManager()
+    @State private var viewModel = MapViewModel()
     
     @State private var selectedRouteKind = "shaded"
     @State private var directionsSheetState: DirectionsSheetState = .hidden
@@ -50,11 +52,6 @@ struct MapView: View {
     /// Diisi saat tombol "Start" di DirectionsSheet ditekan — trigger fullScreenCover ke NavigateView
     @State private var navigateDestination: NavigationDestination?
     
-    
-    let locationManager = LocationManager()
-    /// Tinggi sheet saat collapsed. Dibesarkan dari 260 -> 400 karena sekarang
-    /// kartu rute yang direkomendasikan (RouteOptionCard) ikut ditampilkan
-    /// walau sheet belum di-expand, jadi butuh ruang lebih supaya tidak terpotong.
     private let collapsedSheetHeight: CGFloat = 400
     
     private var selectedOption: RouteOption? {
@@ -164,28 +161,19 @@ struct MapView: View {
                         expandWeatherButton: $expandWeatherButton
                     )
                 }
-                
-                //                if directionsSheetState != .hidden, let recommended = viewModel.routeOptions.first(where: { $0.isRecommended }) {
-                //                    VStack {
-                //                        Spacer()
-                //                        RouteCalloutBubble(option: recommended)
-                //                            .padding(.horizontal, 24)
-                //                            .padding(.bottom, 12)
-                //                    }
-                //                }
-                
+               
                 if directionsSheetState != .hidden {
                     VStack {
                         Spacer()
                         DirectionsSheet(
                             originTitle: resolvedOrigin?.title ?? "My Location",
                             destinationTitle: resolvedDestination?.title ?? "Tujuan",
-                            options: viewModel.routeOptions,
-                            showLegend: true,
                             selectedKind: selectedRouteKind,
+                            options: viewModel.routeOptions,
                             onSelectOption: { option in
                                 selectedRouteKind = option.kind
                             },
+                            showLegend: true,
                             isExpanded: directionsSheetState == .expanded,
                             collapsedHeight: collapsedSheetHeight,
                             expandedHeight: geo.size.height * 0.92,
@@ -455,33 +443,6 @@ struct LocationSuggestionView: View {
     }
 }
 
-private struct RouteCalloutBubble: View {
-    let option: RouteOption
-    var isSelected: Bool = true
-    
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "chart.bar.fill")
-                .font(.system(size: 6))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(option.title)
-                    .font(.system(size: 10, weight: .bold))
-                Text(option.subtitle)
-                    .font(.system(size: 8))
-                    .opacity(0.85)
-            }
-            Spacer()
-        }
-        .frame(width: 100)
-        .foregroundStyle(.white)
-        .padding(14)
-        .background(isSelected ? Color.accentColor : Color(.systemGray))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .shadow(color: .black.opacity(isSelected ? 0.2 : 0.08), radius: isSelected ? 8 : 3)
-        .scaleEffect(isSelected ? 1.0 : 0.92)
-    }
-}
-
 struct weatherAndUVIndexView: View {
     @Bindable var viewModel: MapViewModel
     @Binding var expandUVIndexButton: Bool
@@ -565,6 +526,33 @@ struct weatherAndUVIndexView: View {
         }
         .foregroundStyle(Color(.black))
         .padding(.top, 55)
+    }
+}
+
+private struct RouteCalloutBubble: View {
+    let option: RouteOption
+    var isSelected: Bool = true
+    
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "chart.bar.fill")
+                .font(.system(size: 6))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(option.title)
+                    .font(.system(size: 10, weight: .bold))
+                Text(option.subtitle)
+                    .font(.system(size: 8))
+                    .opacity(0.85)
+            }
+            Spacer()
+        }
+        .frame(width: 100)
+        .foregroundStyle(.white)
+        .padding(14)
+        .background(isSelected ? Color.accentColor : Color(.systemGray))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: .black.opacity(isSelected ? 0.2 : 0.08), radius: isSelected ? 8 : 3)
+        .scaleEffect(isSelected ? 1.0 : 0.92)
     }
 }
 
