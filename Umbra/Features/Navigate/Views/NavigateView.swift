@@ -10,8 +10,6 @@ import Combine
 import MapKit
 
 struct NavigateView: View {
-    /// Di-inject dari MapView supaya tidak membuat CLLocationManager baru
-    /// (menghindari minta izin lokasi & GPS fix dua kali).
     let locationManager: LocationManager
     var selectedRouteKind: String
     
@@ -19,14 +17,7 @@ struct NavigateView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var selectedDestination: CLLocationCoordinate2D?
-    /// Index instruksi yang sedang ditampilkan di carousel (bisa berbeda dari
-    /// `viewModel.currentStepIndex` kalau user lagi swipe untuk preview instruksi lain)
     @State private var selectedStepIndex: Int = 0
-
-    /// Penanda supaya `attemptAutoStartNavigation()` cuma benar-benar memulai
-    /// navigasi SEKALI. Tanpa ini, navigasi akan berulang kali dicoba di-restart
-    /// setiap kali `locationManager.userLocation` berubah (yaitu tiap user
-    /// bergerak >5 meter, sesuai `distanceFilter` di LocationManager).
     @State private var hasAutoStarted = false
 
     /// Tujuan yang dikirim dari MapView (hasil pencarian user)
@@ -73,6 +64,14 @@ struct NavigateView: View {
                 .mapControls {
                     MapCompass()
                 }
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 1)
+                        .onChanged { _ in viewModel.pauseFollowingCamera() }
+                )
+                .simultaneousGesture(
+                    MagnificationGesture()
+                        .onChanged { _ in viewModel.pauseFollowingCamera() }
+                )
 //                .onTapGesture { screenPoint in
 //                    guard !viewModel.isNavigating else { return }
 //                    if let coordinate = proxy.convert(screenPoint, from: .local) {
@@ -133,15 +132,9 @@ struct NavigateView: View {
         .onChange(of: viewModel.currentStepIndex) { _, newValue in
             selectedStepIndex = newValue
         }
-        // Begitu lokasi pertama kali didapat (GPS baru fix) atau berubah,
-        // coba lagi mulai navigasi otomatis. `attemptAutoStartNavigation()`
-        // sendiri yang menjaga supaya ini tidak diulang-ulang.
         .onChange(of: locationManager.userLocation) { _, _ in
             attemptAutoStartNavigation()
         }
-        // @Observable tidak punya publisher Combine ($properti) seperti @Published dulu.
-        // Solusinya: pantau `timestamp`-nya — nilai ini SELALU berubah tiap ada data baru
-        // dari GPS/kompas, jadi bisa dipakai sebagai "sinyal" kapan harus jalankan side effect.
         .onChange(of: locationManager.userLocation?.timestamp) { _, _ in
             guard viewModel.isNavigating, let newLocation = locationManager.userLocation else { return }
 

@@ -238,12 +238,12 @@ final class RoutePlanner {
 //        guard let first = edges.first else {
 //            return RouteResult(nodeIds: [], coordinates: [], totalLength: 0, totalWeight: 0, estimatedTime: 0, label: label)
 //        }
-//        
+//
 //        var nodeIds = [first.source]
 //        var coordinates: [CLLocationCoordinate2D] = []
 //        var totalLength = 0.0
 //        var totalWeight = 0.0
-//        
+//
 //        for edge in edges {
 //            nodeIds.append(edge.target)
 //            totalLength += edge.length
@@ -255,7 +255,7 @@ final class RoutePlanner {
 //                coordinates.append(contentsOf: coords.dropFirst())
 //            }
 //        }
-//        
+//
 //        return RouteResult(
 //            nodeIds: nodeIds,
 //            coordinates: coordinates,
@@ -306,6 +306,34 @@ final class NavigateViewModel: NSObject {
     /// Porsi jarak ke target yang ditempuh tiap tick. Makin kecil = makin halus tapi makin "lag" mengikuti;
     /// makin besar = makin responsif tapi makin terasa patah. 0.12–0.15 biasanya pas untuk jalan kaki.
     private let smoothingFactor: Double = 0.12
+
+    // MARK: - User camera override
+    /// Selama ini `true`, `applyCamera()` boleh menimpa binding `camera`. Begitu user
+    /// mulai gesture (pan/pinch) di peta, ini di-set `false` supaya loop kamera BERHENTI
+    /// menimpa hasil gesture tsb. Tanpa ini, tiap tick (33ms) langsung "menarik paksa"
+    /// kamera kembali ke posisi navigasi, sehingga zoom/pan terasa tidak berfungsi sama sekali.
+    var isFollowingUser: Bool = true
+    private var followResumeTask: Task<Void, Never>?
+    /// Berapa lama menunggu sejak gesture terakhir sebelum kamera otomatis kembali "mengikuti" user.
+    private let followResumeDelay: TimeInterval = 4.0
+
+    /// Panggil ini dari gesture handler di View saat user mulai men-drag/pinch peta.
+    func pauseFollowingCamera() {
+        isFollowingUser = false
+        followResumeTask?.cancel()
+        followResumeTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64((self?.followResumeDelay ?? 4.0) * 1_000_000_000))
+            guard let self, !Task.isCancelled else { return }
+            self.isFollowingUser = true
+        }
+    }
+
+    /// Panggil ini saat user menekan tombol "recenter" — langsung resume follow mode.
+    func resumeFollowingCamera() {
+        followResumeTask?.cancel()
+        followResumeTask = nil
+        isFollowingUser = true
+    }
     
     private var maneuvers: [(instruction: String, coordinate: CLLocationCoordinate2D, distanceFromStart: CLLocationDistance)] = []
     private var cumulativeDistances: [CLLocationDistance] = []
@@ -408,6 +436,9 @@ final class NavigateViewModel: NSObject {
         stopCameraLoop()
         displayedCoordinate = nil
         camera = .automatic
+        followResumeTask?.cancel()
+        followResumeTask = nil
+        isFollowingUser = true
     }
     
     
@@ -548,6 +579,7 @@ final class NavigateViewModel: NSObject {
     /// Dipakai tombol "recenter" — langsung pindah kamera seketika (tanpa interpolasi),
     /// karena ini aksi eksplisit dari user yang mengharapkan respons instan.
     func recenterCamera(to coordinate: CLLocationCoordinate2D, heading: CLLocationDirection) {
+        resumeFollowingCamera()
         targetCoordinate = coordinate
         targetHeading = heading
         displayedCoordinate = coordinate
@@ -729,6 +761,8 @@ final class NavigateViewModel: NSObject {
     }
     
     private func applyCamera() {
+        // User sedang pan/zoom manual -> jangan timpa, biar gesture-nya tidak "ketarik" balik.
+        guard isFollowingUser else { return }
         guard let coordinate = displayedCoordinate else { return }
         camera = .camera(
             MapCamera(
