@@ -13,12 +13,8 @@ struct DirectionsSheet: View {
     var showLegend: Bool = false
     var selectedKind: String
     var onSelectOption: (RouteOption) -> Void
-    
-    /// true = Gambar 3 (full route list), false = Gambar 2 (just origin/destination)
     var isExpanded: Bool
     
-    /// Heights for the two resting states. Pass expandedHeight computed from
-    /// screen size (e.g. geo.size.height * 0.92) so it's near-full-screen.
     var collapsedHeight: CGFloat
     var expandedHeight: CGFloat
     
@@ -36,13 +32,6 @@ struct DirectionsSheet: View {
     var onEditDestination: () -> Void
     
     var onStart: (RouteOption) -> Void
-    
-    // Owned by the gesture itself (not plain @State). This is the fix for the
-    // jitter: @GestureState automatically resets to 0 the instant the drag
-    // ends OR is cancelled/interrupted (e.g. by a competing ScrollView
-    // recognizer when you pause mid-drag). A plain @State var can get stuck
-    // at a stale non-zero value if onEnded never fires, which is what was
-    // causing the jump/oscillation when holding mid-swipe.
     @GestureState private var dragState: CGFloat = 0
     
     private var baseHeight: CGFloat { isExpanded ? expandedHeight : collapsedHeight }
@@ -74,24 +63,6 @@ struct DirectionsSheet: View {
                 .gesture(
                     DragGesture(minimumDistance: 4, coordinateSpace: .local)
                         .updating($dragState) { value, state, _ in
-                            // No withAnimation here on purpose — we want the
-                            // sheet to follow the finger 1:1, with zero lag,
-                            // while actively dragging. Animating this would
-                            // make the sheet "chase" your finger and produce
-                            // exactly the jittery/laggy feel.
-                            //
-                            // BUT: a "held" finger is never perfectly still —
-                            // sensor noise + natural hand tremor constantly
-                            // reports a few points of movement even when the
-                            // user isn't intentionally dragging. Mapping that
-                            // raw translation 1:1 into height is exactly what
-                            // produced the kejang2/oscillation while holding.
-                            // Apple's own sheet doesn't have this problem
-                            // because UIKit's presentation controller applies
-                            // its own physics-based damping; SwiftUI's raw
-                            // DragGesture has none unless we add it. A small
-                            // dead zone absorbs that noise while staying
-                            // imperceptible for real, intentional drags.
                             let raw = value.translation.height
                             let deadZone: CGFloat = 4
                             if abs(raw) < deadZone {
@@ -102,31 +73,25 @@ struct DirectionsSheet: View {
                         }
                         .onEnded { value in
                             let translation = value.translation.height
-                            let threshold: CGFloat = 60   // jarak minimum biar dianggap "sengaja" narik
+                            let threshold: CGFloat = 60  // jarak menarik
                             
                             withAnimation(.spring(response: 0.35, dampingFraction: 0.9)) {
                                 if translation < -threshold {
-                                    // Narik ke ATAS cukup jauh -> expand (kalau belum expanded)
+                                
                                     if !isExpanded {
                                         onExpand()
                                     }
-                                    // kalau udah expanded, gak ngapa-ngapain (tetep expanded)
                                 } else if translation > threshold {
-                                    // Narik ke BAWAH cukup jauh
                                     if isExpanded {
                                         onCollapse()
                                     } else {
                                         onClose()
                                     }
                                 }
-                                // dragState resets itself automatically (that's
-                                // the whole point of @GestureState) — no manual
-                                // reset needed, and none possible to forget.
                             }
                         }
                 )
             
-            // Header — fixed, does not scroll.
             HStack {
                 Text("Directions")
                     .font(.system(size: 28, weight: .bold))
@@ -143,14 +108,6 @@ struct DirectionsSheet: View {
             .padding(.horizontal, 20)
             .padding(.bottom, 20)
             
-            // Origin / destination — fixed, does not scroll.
-            // Two independently-tappable rows: tapping origin lets you change
-            // the starting point, tapping destination lets you change where
-            // you're going. (I don't have LocationInputStack.swift's source,
-            // so this replaces it with an equivalent two-row layout rather
-            // than guessing at how to split taps inside it — swap the visual
-            // styling below for LocationInputStack's if you'd rather match it
-            // exactly, the tap wiring will work the same either way.)
             RouteEndpointsRow(
                 originTitle: originTitle,
                 destinationTitle: destinationTitle,
@@ -159,7 +116,6 @@ struct DirectionsSheet: View {
             .padding(.horizontal, 18)
             .padding(.bottom, 1)
             
-            // Legend — fixed, does not scroll.
             if showLegend {
                 RouteLegendView()
                     .padding(.horizontal, 20)
@@ -167,11 +123,6 @@ struct DirectionsSheet: View {
                     .padding(.bottom, 20)
             }
             
-            // Route options:
-            // - Collapsed (Gambar 2): tampilkan HANYA kartu opsi yang direkomendasikan,
-            //   supaya user langsung lihat info penting + tombol Start tanpa harus expand.
-            // - Expanded (Gambar 3): tampilkan SEMUA opsi rute (termasuk yang
-            //   direkomendasikan) dalam list yang bisa di-scroll.
             if isExpanded {
                 ScrollView {
                     VStack(spacing: 14) {

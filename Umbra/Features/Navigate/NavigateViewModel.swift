@@ -156,6 +156,17 @@ struct RouteResult {
     }
 }
 
+// MARK: - Arrival hand-off
+
+/// Data kecil yang dikirim NavigateView -> MapView lewat closure `onArrive`
+/// begitu user sampai tujuan, supaya MapView bisa menampilkan bottom sheet
+/// "kamu sudah sampai" setelah NavigateView menutup dirinya sendiri.
+struct ArrivalInfo: Identifiable {
+    let id = UUID()
+    let destinationTitle: String
+    let minutesOfSunAvoided: Int
+}
+
 // MARK: - Planner
 
 enum RoutePlannerError: Error {
@@ -290,6 +301,21 @@ final class RoutePlanner {
         let edges = try dijkstra(from: start, to: end) { $0.weight }
         return buildResult(from: edges, label: "shaded")
     }
+    
+    private static func indoorPriorityCost(for edge: RouteEdge) -> Double {
+        let environmentPenalty: Double
+        switch edge.environment {
+        case .indoor: environmentPenalty = 1
+        case .shaded: environmentPenalty = 4
+        case .sunny:  environmentPenalty = 10
+        }
+        return edge.length * environmentPenalty
+    }
+    
+    func shadedRoute(from start: String, to end: String) throws -> RouteResult {
+        let edges = try dijkstra(from: start, to: end, cost: Self.indoorPriorityCost)
+        return buildResult(from: edges, label: "Indoor-priority")
+    }
 }
 
 @MainActor
@@ -297,11 +323,41 @@ final class RoutePlanner {
 final class NavigateViewModel: NSObject {
     
     var shadedRouteResult: RouteResult?
+    //    var route: MKRoute?
     var camera: MapCameraPosition = .automatic
     var currentStepIndex: Int = 0
     var distanceToNextStep: CLLocationDistance = 0
     var isNavigating = false
     var errorMessage: String?
+    
+    /// Jadi `true` sesaat setelah user terdeteksi sampai di tujuan (lihat `checkArrival`).
+    /// View mengamati ini lewat `onChange` untuk menutup NavigateView & menampilkan
+    /// bottom sheet "kamu sudah sampai" di MapView.
+    var didArrive = false
+    
+    /// Snapshot rute terakhir SEBELUM `stopNavigation()` membersihkannya — dipakai
+    /// untuk menghitung statistik "menit terik matahari yang dihindari" di sheet kedatangan.
+    private(set) var arrivalSummary: RouteResult?
+    
+    /// Titik tujuan asli (bukan hasil snap ke graph) — disimpan terpisah supaya
+    /// deteksi "sudah sampai" selalu dibandingkan ke titik yang benar-benar diminta user,
+    /// bukan ke titik terakhir polyline (yang bisa sedikit berbeda karena stitching).
+    private var destinationCoordinate: CLLocationCoordinate2D?
+    
+    /// Radius kedatangan dalam meter. Sengaja dibuat kecil (2m) sesuai kebutuhan produk,
+    /// supaya navigasi otomatis selesai begitu user mendekati tujuan tanpa harus berdiri
+    /// TEPAT di titik koordinatnya (yang nyaris mustahil dengan akurasi GPS biasa).
+    let arrivalRadiusMeters: CLLocationDistance = 20
+    
+    /// Estimasi menit "waktu di bawah sinar matahari" yang berhasil dihindari sepanjang
+    /// rute yang baru saja selesai — dipakai teks di sheet kedatangan. `nil` kalau belum
+    /// ada rute yang selesai (mis. tampilan preview sebelum navigasi pertama dimulai).
+    var minutesOfSunAvoided: Int? {
+        guard let arrivalSummary, arrivalSummary.totalLength > 0 else { return nil }
+        let shadedFraction = arrivalSummary.shadedLength / arrivalSummary.totalLength
+        let minutes = shadedFraction * arrivalSummary.estimatedTimeMinutes
+        return max(1, Int(minutes.rounded()))
+    }
     
     private var graph: RouteGraph?
     private var planner: RoutePlanner?
@@ -323,6 +379,34 @@ final class NavigateViewModel: NSObject {
     /// Porsi jarak ke target yang ditempuh tiap tick. Makin kecil = makin halus tapi makin "lag" mengikuti;
     /// makin besar = makin responsif tapi makin terasa patah. 0.12–0.15 biasanya pas untuk jalan kaki.
     private let smoothingFactor: Double = 0.12
+
+    // MARK: - User camera override
+    /// Selama ini `true`, `applyCamera()` boleh menimpa binding `camera`. Begitu user
+    /// mulai gesture (pan/pinch) di peta, ini di-set `false` supaya loop kamera BERHENTI
+    /// menimpa hasil gesture tsb. Tanpa ini, tiap tick (33ms) langsung "menarik paksa"
+    /// kamera kembali ke posisi navigasi, sehingga zoom/pan terasa tidak berfungsi sama sekali.
+    var isFollowingUser: Bool = true
+    private var followResumeTask: Task<Void, Never>?
+    /// Berapa lama menunggu sejak gesture terakhir sebelum kamera otomatis kembali "mengikuti" user.
+    private let followResumeDelay: TimeInterval = 4.0
+
+    /// Panggil ini dari gesture handler di View saat user mulai men-drag/pinch peta.
+    func pauseFollowingCamera() {
+        isFollowingUser = false
+        followResumeTask?.cancel()
+        followResumeTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64((self?.followResumeDelay ?? 4.0) * 1_000_000_000))
+            guard let self, !Task.isCancelled else { return }
+            self.isFollowingUser = true
+        }
+    }
+
+    /// Panggil ini saat user menekan tombol "recenter" — langsung resume follow mode.
+    func resumeFollowingCamera() {
+        followResumeTask?.cancel()
+        followResumeTask = nil
+        isFollowingUser = true
+    }
     
     private var maneuvers: [(instruction: String, coordinate: CLLocationCoordinate2D, distanceFromStart: CLLocationDistance, nodeId: String?)] = []
     private var cumulativeDistances: [CLLocationDistance] = []
@@ -411,6 +495,9 @@ final class NavigateViewModel: NSObject {
     
     func startNavigation(from origin: CLLocationCoordinate2D, to destination: CLLocationCoordinate2D, kind: String) async {
         selectedKind = kind
+        destinationCoordinate = destination
+        didArrive = false
+        arrivalSummary = nil
         await calculateRoute(from: origin, to: destination, kind: kind)
         if shadedRouteResult != nil {
             isNavigating = true
@@ -425,6 +512,32 @@ final class NavigateViewModel: NSObject {
         stopCameraLoop()
         displayedCoordinate = nil
         camera = .automatic
+        followResumeTask?.cancel()
+        followResumeTask = nil
+        isFollowingUser = true
+    }
+    
+    /// Dipanggil begitu `checkArrival` mendeteksi user sudah dalam radius tujuan.
+    /// Menyimpan snapshot rute (untuk statistik di sheet kedatangan) sebelum
+    /// `stopNavigation()` membersihkan state navigasi seperti biasa.
+    private func handleArrival() {
+        guard !didArrive else { return }
+        arrivalSummary = shadedRouteResult
+        didArrive = true
+        stopNavigation()
+    }
+    
+    /// Cek apakah user sudah berada dalam `arrivalRadiusMeters` dari titik tujuan.
+    /// Dipanggil dari `updateProgress` tiap ada update lokasi baru selama navigasi.
+    private func checkArrival(userLocation: CLLocation) {
+        guard !didArrive, let destinationCoordinate else { return }
+        let destinationLocation = CLLocation(
+            latitude: destinationCoordinate.latitude,
+            longitude: destinationCoordinate.longitude
+        )
+        if userLocation.distance(from: destinationLocation) <= arrivalRadiusMeters {
+            handleArrival()
+        }
     }
     
     
@@ -521,6 +634,8 @@ final class NavigateViewModel: NSObject {
     }
     
     func updateProgress(userLocation: CLLocation) {
+        checkArrival(userLocation: userLocation)
+        guard !didArrive else { return }
         guard !maneuvers.isEmpty, let shadedRouteResult else { return }
         
         // Find nearest coordinate index along the stitched polyline to know how far along we are.
@@ -566,6 +681,7 @@ final class NavigateViewModel: NSObject {
     /// Dipakai tombol "recenter" — langsung pindah kamera seketika (tanpa interpolasi),
     /// karena ini aksi eksplisit dari user yang mengharapkan respons instan.
     func recenterCamera(to coordinate: CLLocationCoordinate2D, heading: CLLocationDirection) {
+        resumeFollowingCamera()
         targetCoordinate = coordinate
         targetHeading = heading
         displayedCoordinate = coordinate
@@ -778,6 +894,8 @@ final class NavigateViewModel: NSObject {
     }
     
     private func applyCamera() {
+        // User sedang pan/zoom manual -> jangan timpa, biar gesture-nya tidak "ketarik" balik.
+        guard isFollowingUser else { return }
         guard let coordinate = displayedCoordinate else { return }
         camera = .camera(
             MapCamera(

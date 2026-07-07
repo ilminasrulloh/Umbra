@@ -10,8 +10,6 @@ import Combine
 import MapKit
 
 struct NavigateView: View {
-    /// Di-inject dari MapView supaya tidak membuat CLLocationManager baru
-    /// (menghindari minta izin lokasi & GPS fix dua kali).
     let locationManager: LocationManager
     var selectedRouteKind: String
     
@@ -19,19 +17,18 @@ struct NavigateView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var selectedDestination: CLLocationCoordinate2D?
-    /// Index instruksi yang sedang ditampilkan di carousel (bisa berbeda dari
-    /// `viewModel.currentStepIndex` kalau user lagi swipe untuk preview instruksi lain)
     @State private var selectedStepIndex: Int = 0
-
-    /// Penanda supaya `attemptAutoStartNavigation()` cuma benar-benar memulai
-    /// navigasi SEKALI. Tanpa ini, navigasi akan berulang kali dicoba di-restart
-    /// setiap kali `locationManager.userLocation` berubah (yaitu tiap user
-    /// bergerak >5 meter, sesuai `distanceFilter` di LocationManager).
     @State private var hasAutoStarted = false
 
     /// Tujuan yang dikirim dari MapView (hasil pencarian user)
     let initialDestination: CLLocationCoordinate2D
     let destinationTitle: String
+    
+    /// Kontrol tampil/tidaknya bottom sheet "kamu sudah sampai". Muncul begitu
+    /// `viewModel.didArrive` jadi true, dan HANYA tertutup lewat tombol checkmark
+    /// di `ArrivalSummarySheet` — bukan swipe-to-dismiss — supaya user secara sadar
+    /// mengonfirmasi sebelum kembali ke MapView.
+    @State private var showArrivalSheet = false
 
     init(
         locationManager: LocationManager,
@@ -73,6 +70,14 @@ struct NavigateView: View {
                 .mapControls {
                     MapCompass()
                 }
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 1)
+                        .onChanged { _ in viewModel.pauseFollowingCamera() }
+                )
+                .simultaneousGesture(
+                    MagnificationGesture()
+                        .onChanged { _ in viewModel.pauseFollowingCamera() }
+                )
 //                .onTapGesture { screenPoint in
 //                    guard !viewModel.isNavigating else { return }
 //                    if let coordinate = proxy.convert(screenPoint, from: .local) {
@@ -133,19 +138,17 @@ struct NavigateView: View {
         .onChange(of: viewModel.currentStepIndex) { _, newValue in
             selectedStepIndex = newValue
         }
-        // Begitu lokasi pertama kali didapat (GPS baru fix) atau berubah,
-        // coba lagi mulai navigasi otomatis. `attemptAutoStartNavigation()`
-        // sendiri yang menjaga supaya ini tidak diulang-ulang.
         .onChange(of: locationManager.userLocation) { _, _ in
             attemptAutoStartNavigation()
         }
-        // @Observable tidak punya publisher Combine ($properti) seperti @Published dulu.
-        // Solusinya: pantau `timestamp`-nya — nilai ini SELALU berubah tiap ada data baru
-        // dari GPS/kompas, jadi bisa dipakai sebagai "sinyal" kapan harus jalankan side effect.
         .onChange(of: locationManager.userLocation?.timestamp) { _, _ in
             guard viewModel.isNavigating, let newLocation = locationManager.userLocation else { return }
 
             viewModel.updateProgress(userLocation: newLocation)
+            // `updateProgress` bisa saja baru mendeteksi kedatangan dan menghentikan
+            // navigasi (isNavigating -> false) — kalau begitu, hentikan di sini supaya
+            // tidak menggerakkan kamera / mengecek off-route untuk navigasi yang sudah berakhir.
+            guard viewModel.isNavigating else { return }
             viewModel.setCameraTarget(
                 coordinate: newLocation.coordinate,
                 heading: effectiveNavigationHeading(location: newLocation)
@@ -163,6 +166,30 @@ struct NavigateView: View {
                 coordinate: currentLocation.coordinate,
                 heading: effectiveNavigationHeading(location: currentLocation)
             )
+        }
+        // Sinyal "sudah sampai" dari ViewModel — tampilkan bottom sheet kedatangan
+        // DI ATAS layar navigasi ini. NavigateView baru benar-benar menutup diri
+        // (kembali ke MapView) setelah user menekan tombol checkmark di sheet.
+        .onChange(of: viewModel.didArrive) { _, arrived in
+            guard arrived else { return }
+            showArrivalSheet = true
+        }
+        .sheet(isPresented: $showArrivalSheet) {
+            ArrivalSummarySheet(
+                info: ArrivalInfo(
+                    destinationTitle: destinationTitle,
+                    minutesOfSunAvoided: viewModel.minutesOfSunAvoided ?? 0
+                ),
+                onDismiss: {
+                    showArrivalSheet = false
+                    dismiss()
+                }
+            )
+            .presentationDetents([.height(340)])
+            .presentationDragIndicator(.visible)
+            // Sengaja dimatikan: user harus tap checkmark, bukan swipe-down,
+            // supaya perpindahan ke MapView selalu lewat aksi yang disengaja.
+            .interactiveDismissDisabled()
         }
     }
 
@@ -340,4 +367,64 @@ struct NavigateView: View {
         destination: CLLocationCoordinate2D(latitude: -6.1754, longitude: 106.8272),
         destinationTitle: "Monas"
     )
+}
+
+/// Bottom sheet yang muncul di atas NavigateView begitu user sampai tujuan.
+/// Ikon tujuan + judul di kiri, tombol checkmark di kanan (satu-satunya cara
+/// menutup sheet ini — lihat `.interactiveDismissDisabled()` di pemanggilnya),
+/// emoji besar di tengah, lalu kalimat ringkasan "menit terik matahari yang dihindari".
+struct ArrivalSummarySheet: View {
+    let info: ArrivalInfo
+    var onDismiss: () -> Void
+    
+    var body: some View {
+        VStack(spacing: 28) {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(Color.orange)
+                        .frame(width: 36, height: 36)
+                    Image(systemName: "mappin")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+                
+                Text(info.destinationTitle)
+                    .font(.title3)
+                    .fontWeight(.bold)
+                    .lineLimit(1)
+                
+                Spacer()
+                
+                Button(action: onDismiss) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.blue)
+                            .frame(width: 36, height: 36)
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
+                }
+            }
+            
+            Text("😎")
+                .font(.system(size: 56))
+            
+            arrivalMessage
+                .font(.title3)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(Color(.label))
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 20)
+        .padding(.bottom, 24)
+    }
+    
+    private var arrivalMessage: Text {
+        let minutes = info.minutesOfSunAvoided
+        let unit = minutes == 1 ? "minute" : "minutes"
+        return Text("You're here! That's " + "\(minutes) \(unit) of sun").fontWeight(.bold)
+        + Text(" you didn't have to deal with.")
+    }
 }

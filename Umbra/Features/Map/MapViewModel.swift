@@ -148,10 +148,10 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
             options.append(RouteOption(
                 kind: "fastest",
                 shadePercent: 0,
-                subtitle: "Fastest",
+                subtitle: isOnlyRoute ? "Recommended - Fastest" : "Fastest",
                 minutes: max(Int(plain.expectedTravelTime/60), 1),
                 meters: Int(plain.distance),
-                isRecommended: false))
+                isRecommended: isOnlyRoute))
         }
         
         return options
@@ -164,8 +164,7 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
     private var searchDebounceTask: Task<Void, Never>?
     private var distanceCache: [String: String] = [:]
     private var distanceResolutionTask: Task<Void, Never>?
-    
-    // Menggunakan SearchGate baru dengan pembagian prioritas
+
     private let searchGate = SearchGate()
     
     override init() {
@@ -182,7 +181,6 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
     func SearchLocation(query: String) {
         searchDebounceTask?.cancel()
         
-        // Membersihkan memory cache setiap ada input baru agar tidak overflow
         distanceCache.removeAll()
         
         guard !query.isEmpty else {
@@ -199,14 +197,12 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
     
     func completerDidUpdateResults(_ completer: MKLocalSearchCompleter) {
         results = completer.results
-        //        loadDistances(for: results)
     }
     
     func completer(_ completer: MKLocalSearchCompleter, didFailWithError error: Error) {
         results = []
     }
     
-    /// Menyelesaikan koordinat tujuan menggunakan JALUR VIP (Foreground)
     @MainActor
     func resolveDestination(for completion: MKLocalSearchCompletion) async -> NavigationDestination? {
         await searchGate.executeForeground {
@@ -225,9 +221,6 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
         locationManager.RequestUserLocation()
     }
     
-    /// Hitung rute jalan kaki asli dari lokasi user saat ini ke koordinat tujuan.
-    /// Dipanggil setelah user tap "See Routes", supaya layar preview rute
-    /// menampilkan jalur & estimasi yang beneran, bukan data sample.
     @MainActor
     func calculateWalkingRoute(to destination: CLLocationCoordinate2D) async {
         guard let origin = locationManager.userLocation?.coordinate else {
@@ -264,7 +257,6 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
         }
     }
     
-    /// Menyelesaikan perhitungan jarak menggunakan JALUR BIASA (Background)
     @MainActor
     func resolveDistance(for completion: MKLocalSearchCompletion) async -> String {
         let key = completion.stableID
@@ -336,7 +328,6 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
             self.routeGraph = graph
             self.routePlanner = RoutePlanner(graph: graph)
         } catch {
-            // handle/log if you want visibility here
         }
     }
     
@@ -358,7 +349,6 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
             return
         }
         guard let graph = routeGraph, let planner = routePlanner else {
-            // Graph missing entirely — fall back to plain Apple Maps walking route
             await legacyAppleMapsRoute(from: origin, to: destination)
             return
         }
@@ -384,8 +374,6 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
         }
     }
     
-    /// Bridges origin/destination to the graph, exactly like NavigateViewModel does —
-    /// this is the "apple map" leg on either end of the "json" core.
     private func nativeWalkingLeg(from: CLLocationCoordinate2D, to: CLLocationCoordinate2D) async -> RouteResult? {
         guard CLLocation(latitude: from.latitude, longitude: from.longitude)
             .distance(from: CLLocation(latitude: to.latitude, longitude: to.longitude)) > snapThresholdMeters
@@ -461,7 +449,6 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
         )
     }
     
-    /// Fallback when the area isn't in the graph at all — plain Apple Maps route.
     @MainActor
     private func legacyAppleMapsRoute(from origin: CLLocationCoordinate2D, to destination: CLLocationCoordinate2D) async {
         let request = MKDirections.Request()

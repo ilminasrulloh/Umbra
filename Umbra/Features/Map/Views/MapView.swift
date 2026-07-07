@@ -30,9 +30,11 @@ struct MapView: View {
     @State var currentPresentationDetents: PresentationDetent = .fraction(0.1)
     @FocusState var clickedTextField: Field?
     
-    
     @State private var selectedRouteKind = "shaded"
     @State private var directionsSheetState: DirectionsSheetState = .hidden
+    
+    /// Menyimpan camera distance secara dinamis untuk auto-scaling bubble callout rute
+    @State private var cameraDistance: Double = 2000
     
     /// Tujuan yang sudah di-resolve jadi koordinat asli (hasil tap "See Routes")
     @State private var resolvedDestination: NavigationDestination?
@@ -48,6 +50,8 @@ struct MapView: View {
     /// Diisi saat tombol "Start" di DirectionsSheet ditekan — trigger fullScreenCover ke NavigateView
     @State private var navigateDestination: NavigationDestination?
     
+    
+    let locationManager = LocationManager()
     /// Tinggi sheet saat collapsed. Dibesarkan dari 260 -> 400 karena sekarang
     /// kartu rute yang direkomendasikan (RouteOptionCard) ikut ditampilkan
     /// walau sheet belum di-expand, jadi butuh ruang lebih supaya tidak terpotong.
@@ -57,12 +61,23 @@ struct MapView: View {
         viewModel.routeOptions.first(where: { $0.kind == selectedRouteKind })
     }
     
+    private var coneRotationDegrees: Double? {
+        guard let heading = locationManager.heading, heading.headingAccuracy >= 0 else { return nil }
+        let value = heading.trueHeading >= 0 ? heading.trueHeading : heading.magneticHeading
+        return value
+    }
+    
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .bottom) {
                 Map(position: $viewModel.userCurrentPosition) {
                     UserAnnotation()
-                    
+                    if let userCoordinate = locationManager.userLocation?.coordinate {
+                        Annotation("", coordinate: userCoordinate) {
+                            UserLocationIndicator(headingDegrees: coneRotationDegrees)
+                        }
+                        .annotationTitles(.hidden)
+                    }
                     
                     routeOverlay
                     
@@ -77,11 +92,13 @@ struct MapView: View {
                             .tint(.green)
                     }
                     
-                    
                     ForEach(viewModel.routeOptions, id: \.kind) { option in
                         if let coordinate = viewModel.midpointCoordinate(for: option.kind) {
                             Annotation("", coordinate: coordinate) {
                                 RouteCalloutBubble(option: option, isSelected: option.kind == selectedRouteKind)
+                                    // UBAH NILAI 0.4 MENJADI 0.75 ATAU 0.8 DI SINI
+                                    .scaleEffect(max(0.75, min(1.0, 3000 / cameraDistance)))
+                                    .animation(.interactiveSpring, value: cameraDistance)
                                     .onTapGesture {
                                         withAnimation(.spring(duration: 0.3)) {
                                             selectedRouteKind = option.kind
@@ -93,6 +110,10 @@ struct MapView: View {
                     }
                 }
                 .ignoresSafeArea()
+                // Deteksi perubahan zoom level peta secara kontinu
+                .onMapCameraChange(frequency: .continuous) { context in
+                    cameraDistance = context.camera.distance
+                }
                 .onAppear {
                     viewModel.RequestUserLocation()
                 }
@@ -127,8 +148,8 @@ struct MapView: View {
                             }
                             guard let destinationCoordinate = resolvedDestination?.coordinate else { return }
                             Task {
-                                await viewModel.calculateShadedWalkingRoute(to: destination.coordinate)
-                                await viewModel.calculateWalkingRoute(to: destination.coordinate)
+                                await viewModel.calculateShadedWalkingRoute(to: destinationCoordinate)
+                                await viewModel.calculateWalkingRoute(to: destinationCoordinate)
                             }
                         }
                     )
@@ -198,10 +219,6 @@ struct MapView: View {
                                 }
                             },
                             onEditOrigin: {
-                                // Send the user back into BottomPanelSheetView, pre-filled
-                                // with the current origin so they can change the starting
-                                // point. editingField tells onSeeRoutes (above) that the
-                                // next pick should update resolvedOrigin, not the destination.
                                 editingField = .origin
                                 viewModel.userOriginText = resolvedOrigin?.title ?? ""
                                 withAnimation(.spring(response: 0.35, dampingFraction: 0.9)) {
@@ -222,8 +239,6 @@ struct MapView: View {
                                 clickedTextField = .destination
                             },
                             onStart: { option in
-                                // Rute sudah dilihat user di layar preview — sekarang pindah ke NavigateView
-                                // untuk mulai navigasi langkah-demi-langkah yang sebenarnya.
                                 selectedRouteKind = option.kind
                                 navigateDestination = resolvedDestination
                             }
@@ -269,17 +284,11 @@ struct MapView: View {
     }
 }
 
-
 struct BottomPanelSheetView: View {
     @Bindable var viewModel: MapViewModel
     @Binding var currentPresentationDetents: PresentationDetent
     var focusedField: FocusState<Field?>.Binding
-    /// Which field is currently being edited (origin or destination) — set
-    /// by MapView right before it presents this sheet, based on which row
-    /// in DirectionsSheet was tapped. Determines which text property this
-    /// view searches with and shows.
     var editingField: Field
-    /// NEW: called when the user taps "See Routes" on a suggestion, dengan tujuan yang sudah di-resolve.
     var onSeeRoutes: (NavigationDestination) -> Void
     
     var isExtended: Bool { currentPresentationDetents == .large }
@@ -304,7 +313,6 @@ struct BottomPanelSheetView: View {
                             if viewModel.showDestination {
                                 viewModel.SearchLocation(query: newQuery)
                             }
-                            
                         }
                         .overlay {
                             if !isExtended {
@@ -319,7 +327,6 @@ struct BottomPanelSheetView: View {
                                     }
                             }
                         }
-                    
                     
                     if isExtended && !activeSearchText.wrappedValue.isEmpty {
                         Button(action: {
@@ -346,7 +353,6 @@ struct BottomPanelSheetView: View {
                             .fontWeight(.light)
                             .symbolRenderingMode(.palette)
                             .foregroundStyle(Color(.black), Color(.systemGray3))
-                        
                     }
                 }
             }
@@ -362,19 +368,12 @@ struct BottomPanelSheetView: View {
                 } else {
                     ScrollView {
                         VStack(spacing: 0) {
-                            // Keyed by stableID (title+subtitle) instead of \.self.
-                            // MKLocalSearchCompletion hands back brand-new object
-                            // instances on every completer update, so identity-based
-                            // IDs made SwiftUI treat every keystroke as "delete all
-                            // rows, insert all rows" — which is what was cancelling
-                            // the in-flight distance lookups and leaving "—" on screen.
                             ForEach(viewModel.results, id: \.stableID) { result in
                                 LocationSuggestionView(
                                     viewModel: viewModel,
                                     result: result,
                                     onSeeRoutes: onSeeRoutes
                                 )
-                                
                             }
                         }
                     }
@@ -389,7 +388,6 @@ struct LocationSuggestionView: View {
     @Bindable var viewModel: MapViewModel
     @State private var distanceText: String = ""
     var result: MKLocalSearchCompletion
-    /// NEW: called when "See Routes" is tapped for this suggestion.
     var onSeeRoutes: (NavigationDestination) -> Void
     
     var body: some View {
@@ -411,14 +409,6 @@ struct LocationSuggestionView: View {
                     VStack(alignment: .leading) {
                         Text(result.title)
                             .foregroundStyle(Color(.black))
-                        //                        HStack {
-                        //                            Text(distanceText)
-                        //                                .layoutPriority(1)
-                        //                            Text("•")
-                        //                            Text(result.subtitle)
-                        //                                .lineLimit(1)
-                        //                                .truncationMode(.tail)
-                        //                        }
                         Text(result.subtitle)
                             .lineLimit(1)
                             .truncationMode(.tail)
@@ -455,19 +445,8 @@ struct LocationSuggestionView: View {
         .cornerRadius(20)
         .padding(.bottom, viewModel.results.first == result ? 8 : 0)
         .padding(.horizontal, 30)
-        //        .task(id: result.stableID) {
-        //            distanceText = await viewModel.resolveDistance(for: result)
-        //        }
     }
     
-    /// Resolve hasil pencarian jadi koordinat asli lewat MapViewModel,
-    /// lalu teruskan ke onSeeRoutes begitu selesai.
-    ///
-    /// This now reads the resolved destination straight out of this Task's
-    /// own await, instead of writing to (and reading back from) a shared
-    /// property on the view model. That shared-property round trip was the
-    /// race: tapping two different suggestions in a row could let the
-    /// *slower* lookup finish last and overwrite the one that should have won.
     private func selectDestination() {
         Task {
             if let destination = await viewModel.resolveDestination(for: result) {
@@ -477,7 +456,6 @@ struct LocationSuggestionView: View {
     }
 }
 
-/// The speech-bubble style callout pointing at the route on the map.
 private struct RouteCalloutBubble: View {
     let option: RouteOption
     var isSelected: Bool = true
@@ -547,7 +525,6 @@ struct weatherAndUVIndexView: View {
                     .padding(.trailing, 10)
                 }
             }
-            
             
             Button(action: { expandUVIndexButton.toggle() }) {
                 if expandUVIndexButton {
