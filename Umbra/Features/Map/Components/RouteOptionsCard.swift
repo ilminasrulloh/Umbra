@@ -10,6 +10,8 @@ import SwiftUI
 /// Reusable Component for Route Options
 struct RouteOptionCard: View {
     let option: RouteOption
+//    var isSelected: Bool = false
+//    var onSelect: () -> Void = {}
     var onStart: () -> Void
 
     var body: some View {

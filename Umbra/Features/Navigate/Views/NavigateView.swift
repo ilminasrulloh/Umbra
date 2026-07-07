@@ -13,6 +13,8 @@ struct NavigateView: View {
     /// Di-inject dari MapView supaya tidak membuat CLLocationManager baru
     /// (menghindari minta izin lokasi & GPS fix dua kali).
     let locationManager: LocationManager
+    var selectedRouteKind: String
+    
     @State private var viewModel = NavigateViewModel()
     @Environment(\.dismiss) private var dismiss
 
@@ -34,11 +36,13 @@ struct NavigateView: View {
     init(
         locationManager: LocationManager,
         destination: CLLocationCoordinate2D,
-        destinationTitle: String = "Tujuan"
+        destinationTitle: String = "Tujuan",
+        selectedRouteKind: String = "shaded"
     ) {
         self.locationManager = locationManager
         self.initialDestination = destination
         self.destinationTitle = destinationTitle
+        self.selectedRouteKind = selectedRouteKind
     }
 
     var body: some View {
@@ -149,7 +153,7 @@ struct NavigateView: View {
 
             if viewModel.isOffRoute(newLocation) {
                 Task {
-                    await viewModel.calculateRoute(from: newLocation.coordinate, to: currentDestination)
+                    await viewModel.calculateRoute(from: newLocation.coordinate, to: currentDestination, kind: viewModel.selectedKind)
                 }
             }
         }
@@ -174,7 +178,7 @@ struct NavigateView: View {
 
         hasAutoStarted = true
         Task {
-            await viewModel.startNavigation(from: origin, to: currentDestination)
+            await viewModel.startNavigation(from: origin, to: currentDestination, kind: selectedRouteKind)
         }
     }
 

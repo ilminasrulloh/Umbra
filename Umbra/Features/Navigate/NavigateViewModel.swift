@@ -129,9 +129,15 @@ struct RouteResult {
     let totalWeight: Double
     let estimatedTime: TimeInterval
     let label: String
+    var shadedLength: Double = 0
     
     var totalLengthKm: Double { totalLength / 1000 }
     var estimatedTimeMinutes: Double { estimatedTime / 60 }
+    
+    var shadePercent: Int {
+        guard totalLength > 0 else { return 0 }
+        return Int((shadedLength/totalLength) * 100)
+    }
 }
 
 // MARK: - Planner
@@ -149,6 +155,45 @@ final class RoutePlanner {
     init(graph: RouteGraph, walkingSpeed: Double = 1.4) {
         self.graph = graph
         self.walkingSpeed = walkingSpeed
+    }
+    
+    private func buildResult(from edges: [RouteEdge], label: String) -> RouteResult {
+        guard let first = edges.first else {
+            return RouteResult(nodeIds: [], coordinates: [], totalLength: 0, totalWeight: 0, estimatedTime: 0, label: label)
+        }
+        
+        var nodeIds = [first.source]
+        var coordinates: [CLLocationCoordinate2D] = []
+        var totalLength = 0.0
+        var totalWeight = 0.0
+        var shadedLength = 0.0
+        
+        for edge in edges {
+            nodeIds.append(edge.target)
+            totalLength += edge.length
+            totalWeight += edge.weight
+            
+            if edge.environment != .sunny {
+                shadedLength += edge.length
+            }
+                
+            let coords = edge.coordinates.map {$0.coordinate}
+            
+            if coordinates.isEmpty {
+                coordinates.append(contentsOf: coords)
+            } else {
+                coordinates.append(contentsOf: coords.dropFirst())
+            }
+        }
+        
+        return RouteResult(
+            nodeIds: nodeIds,
+            coordinates: coordinates,
+            totalLength: totalLength,
+            totalWeight: totalWeight,
+            estimatedTime: totalLength/walkingSpeed,
+            label: label,
+            shadedLength: shadedLength)
     }
     
     private func dijkstra(from start: String, to end: String, cost: (RouteEdge) -> Double) throws -> [RouteEdge] {
@@ -189,37 +234,37 @@ final class RoutePlanner {
         return path.reversed()
     }
     
-    private func buildResult(from edges: [RouteEdge], label: String) -> RouteResult {
-        guard let first = edges.first else {
-            return RouteResult(nodeIds: [], coordinates: [], totalLength: 0, totalWeight: 0, estimatedTime: 0, label: label)
-        }
-        
-        var nodeIds = [first.source]
-        var coordinates: [CLLocationCoordinate2D] = []
-        var totalLength = 0.0
-        var totalWeight = 0.0
-        
-        for edge in edges {
-            nodeIds.append(edge.target)
-            totalLength += edge.length
-            totalWeight += edge.weight
-            let coords = edge.coordinates.map { $0.coordinate }
-            if coordinates.isEmpty {
-                coordinates.append(contentsOf: coords)
-            } else {
-                coordinates.append(contentsOf: coords.dropFirst())
-            }
-        }
-        
-        return RouteResult(
-            nodeIds: nodeIds,
-            coordinates: coordinates,
-            totalLength: totalLength,
-            totalWeight: totalWeight,
-            estimatedTime: totalLength / walkingSpeed,
-            label: label
-        )
-    }
+//    private func buildResult(from edges: [RouteEdge], label: String) -> RouteResult {
+//        guard let first = edges.first else {
+//            return RouteResult(nodeIds: [], coordinates: [], totalLength: 0, totalWeight: 0, estimatedTime: 0, label: label)
+//        }
+//        
+//        var nodeIds = [first.source]
+//        var coordinates: [CLLocationCoordinate2D] = []
+//        var totalLength = 0.0
+//        var totalWeight = 0.0
+//        
+//        for edge in edges {
+//            nodeIds.append(edge.target)
+//            totalLength += edge.length
+//            totalWeight += edge.weight
+//            let coords = edge.coordinates.map { $0.coordinate }
+//            if coordinates.isEmpty {
+//                coordinates.append(contentsOf: coords)
+//            } else {
+//                coordinates.append(contentsOf: coords.dropFirst())
+//            }
+//        }
+//        
+//        return RouteResult(
+//            nodeIds: nodeIds,
+//            coordinates: coordinates,
+//            totalLength: totalLength,
+//            totalWeight: totalWeight,
+//            estimatedTime: totalLength / walkingSpeed,
+//            label: label
+//        )
+//    }
     
     /// We only need the shadiest route for navigation right now — kept as its own
     /// method (rather than the old shadiest/fastest/balanced tuple) since
@@ -361,8 +406,11 @@ final class NavigateViewModel: NSObject {
         Date().addingTimeInterval(remainingTravelTime)
     }
     
-    func startNavigation(from origin: CLLocationCoordinate2D, to destination: CLLocationCoordinate2D) async {
-        await calculateRoute(from: origin, to: destination)
+    private(set) var selectedKind: String = "shaded"
+    
+    func startNavigation(from origin: CLLocationCoordinate2D, to destination: CLLocationCoordinate2D, kind: String) async {
+        selectedKind = kind
+        await calculateRoute(from: origin, to: destination, kind: kind)
         if shadedRouteResult != nil {
             isNavigating = true
             startCameraLoop()
@@ -379,27 +427,34 @@ final class NavigateViewModel: NSObject {
     }
     
     
-    //    func calculateRoute(from origin: CLLocationCoordinate2D, to destination: CLLocationCoordinate2D) async {
-    //        let request = MKDirections.Request()
-    //        request.source = MKMapItem(placemark: MKPlacemark(coordinate: origin))
-    //        request.destination = MKMapItem(placemark: MKPlacemark(coordinate: destination))
-    //        request.transportType = .walking
-    //        request.requestsAlternateRoutes = false
-    //
-    //        do {
-    //            let directions = MKDirections(request: request)
-    //            let response = try await directions.calculate()
-    //            guard let newRoute = response.routes.first else {
-    //                errorMessage = "Rute tidak ditemukan"
-    //                return
-    //            }
-    //            self.route = newRoute
-    //            self.currentStepIndex = 0
-    //            self.errorMessage = nil
-    //        } catch {
-    //            self.errorMessage = "Gagal menghitung rute: \(error.localizedDescription)"
-    //        }
-    //    }
+    private func calculateNativeRoute(from origin: CLLocationCoordinate2D, to destination: CLLocationCoordinate2D) async {
+        let request = MKDirections.Request()
+        request.source = MKMapItem(placemark: MKPlacemark(coordinate: origin))
+        request.destination = MKMapItem(placemark: MKPlacemark(coordinate: destination))
+        request.transportType = .walking
+
+        do {
+            let response = try await MKDirections(request: request).calculate()
+            guard let route = response.routes.first else {
+                errorMessage = "Rute tidak ditemukan"
+                return
+            }
+            let result = RouteResult(
+                nodeIds: [],
+                coordinates: route.polyline.coordinates,
+                totalLength: route.distance,
+                totalWeight: 0,
+                estimatedTime: route.expectedTravelTime,
+                label: "Fastest (Apple Maps)"
+            )
+            self.shadedRouteResult = result
+            self.currentStepIndex = 0
+            self.errorMessage = nil
+            buildManeuvers(from: result)
+        } catch {
+            self.errorMessage = "Gagal menghitung rute: \(error.localizedDescription)"
+        }
+    }
     
     /// Dipanggil setiap ada update lokasi user untuk maju ke instruksi berikutnya
     //    func updateProgress(userLocation: CLLocation) {
@@ -420,7 +475,15 @@ final class NavigateViewModel: NSObject {
     //        }
     //    }
     
-    func calculateRoute(from origin: CLLocationCoordinate2D, to destination: CLLocationCoordinate2D) async {
+    func calculateRoute(from origin: CLLocationCoordinate2D, to destination: CLLocationCoordinate2D, kind: String) async {
+        if kind == "fastest" {
+            await calculateNativeRoute(from: origin, to: destination)
+        } else {
+            await calculateShadedRoute(from: origin, to: destination)
+        }
+    }
+        
+    func calculateShadedRoute(from origin: CLLocationCoordinate2D, to destination: CLLocationCoordinate2D) async {
         guard let graph, let planner else {
             errorMessage = "Route graph (1400.json) failed to load — check it's included in the app bundle."
             return

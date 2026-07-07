@@ -30,10 +30,10 @@ struct MapView: View {
     @State var currentPresentationDetents: PresentationDetent = .fraction(0.1)
     @FocusState var clickedTextField: Field?
     
+    
+    @State private var selectedRouteKind = "shaded"
     @State private var directionsSheetState: DirectionsSheetState = .hidden
-    @State private var options = RouteOption.sample
-//    @State private var options: RouteOption?
-
+    
     /// Tujuan yang sudah di-resolve jadi koordinat asli (hasil tap "See Routes")
     @State private var resolvedDestination: NavigationDestination?
 
@@ -109,7 +109,7 @@ struct MapView: View {
                     )
                 }
 
-                if directionsSheetState != .hidden, let recommended = options.first(where: { $0.isRecommended }) {
+                if directionsSheetState != .hidden, let recommended = viewModel.routeOptions.first(where: { $0.isRecommended }) {
                     VStack {
                         Spacer()
                         RouteCalloutBubble(option: recommended)
@@ -124,7 +124,7 @@ struct MapView: View {
                         DirectionsSheet(
                             originTitle: "My Location",
                             destinationTitle: resolvedDestination?.title ?? "Tujuan",
-                            options: options,
+                            options: viewModel.routeOptions,
                             showLegend: true,
                             isExpanded: directionsSheetState == .expanded,
                             collapsedHeight: collapsedSheetHeight,
@@ -173,7 +173,8 @@ struct MapView: View {
             NavigateView(
                 locationManager: viewModel.locationManager,
                 destination: destination.coordinate,
-                destinationTitle: destination.title
+                destinationTitle: destination.title,
+                selectedRouteKind: selectedRouteKind
             )
         }
     }
