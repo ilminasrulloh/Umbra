@@ -41,6 +41,12 @@ struct DirectionsSheet: View {
         min(max(baseHeight - dragTranslation, collapsedHeight), expandedHeight)
     }
     
+    /// Opsi rute yang ditandai sebagai rekomendasi utama — inilah yang tetap
+    /// ditampilkan walau sheet masih collapsed, sesuai desain (Gambar 2).
+    private var recommendedOption: RouteOption? {
+        options.first(where: { $0.isRecommended })
+    }
+    
     var body: some View {
         VStack(spacing: 0) {
             // Drag handle — swipe down to close/collapse, swipe up to expand.
@@ -108,7 +114,11 @@ struct DirectionsSheet: View {
                     .padding(.bottom, 20)
             }
             
-            // Route options — ONLY this part scrolls, and only shows once expanded.
+            // Route options:
+            // - Collapsed (Gambar 2): tampilkan HANYA kartu opsi yang direkomendasikan,
+            //   supaya user langsung lihat info penting + tombol Start tanpa harus expand.
+            // - Expanded (Gambar 3): tampilkan SEMUA opsi rute (termasuk yang
+            //   direkomendasikan) dalam list yang bisa di-scroll.
             if isExpanded {
                 ScrollView {
                     VStack(spacing: 14) {
@@ -121,6 +131,12 @@ struct DirectionsSheet: View {
                     .padding(.horizontal, 20)
                     .padding(.bottom, 20)
                 }
+            } else if let recommended = recommendedOption {
+                RouteOptionCard(option: recommended) {
+                    onStart(recommended)
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 20)
             } else {
                 Spacer(minLength: 12)
             }

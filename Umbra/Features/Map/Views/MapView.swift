@@ -39,7 +39,10 @@ struct MapView: View {
     /// Diisi saat tombol "Start" di DirectionsSheet ditekan — trigger fullScreenCover ke NavigateView
     @State private var navigateDestination: NavigationDestination?
 
-    private let collapsedSheetHeight: CGFloat = 260
+    /// Tinggi sheet saat collapsed. Dibesarkan dari 260 -> 400 karena sekarang
+    /// kartu rute yang direkomendasikan (RouteOptionCard) ikut ditampilkan
+    /// walau sheet belum di-expand, jadi butuh ruang lebih supaya tidak terpotong.
+    private let collapsedSheetHeight: CGFloat = 400
     
     var body: some View {
         GeometryReader { geo in
