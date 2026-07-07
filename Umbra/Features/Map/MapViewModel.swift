@@ -115,26 +115,26 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
     /// Hitung rute jalan kaki asli dari lokasi user saat ini ke koordinat tujuan.
     /// Dipanggil setelah user tap "See Routes", supaya layar preview rute
     /// menampilkan jalur & estimasi yang beneran, bukan data sample.
-    //    @MainActor
-    //    func calculateWalkingRoute(to destination: CLLocationCoordinate2D) async {
-    //        guard let origin = locationManager.userLocation?.coordinate else {
-    //            calculatedRoutes = []
-    //            return
-    //        }
-    //
-    //        let request = MKDirections.Request()
-    //        request.source = MKMapItem(placemark: MKPlacemark(coordinate: origin))
-    //        request.destination = MKMapItem(placemark: MKPlacemark(coordinate: destination))
-    //        request.transportType = .walking
-    //        request.requestsAlternateRoutes = true
-    //
-    //        do {
-    //            let response = try await MKDirections(request: request).calculate()
-    //            calculatedRoutes = response.routes
-    //        } catch {
-    //            calculatedRoutes = []
-    //        }
-    //    }
+        @MainActor
+        func calculateWalkingRoute(to destination: CLLocationCoordinate2D) async {
+            guard let origin = locationManager.userLocation?.coordinate else {
+                calculatedRoutes = []
+                return
+            }
+    
+            let request = MKDirections.Request()
+            request.source = MKMapItem(placemark: MKPlacemark(coordinate: origin))
+            request.destination = MKMapItem(placemark: MKPlacemark(coordinate: destination))
+            request.transportType = .walking
+            request.requestsAlternateRoutes = true
+    
+            do {
+                let response = try await MKDirections(request: request).calculate()
+                calculatedRoutes = response.routes
+            } catch {
+                calculatedRoutes = []
+            }
+        }
     
     // Get Current Weather
     func GetCurrentWeather(for location: CLLocation) async {
@@ -192,7 +192,7 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
     }
     
     @MainActor
-    func calculateWalkingRoute(to destination: CLLocationCoordinate2D) async {
+    func calculateShadedWalkingRoute(to destination: CLLocationCoordinate2D) async {
         guard let origin = locationManager.userLocation?.coordinate else {
             shadedRoute = nil
             return
