@@ -14,7 +14,6 @@ struct UserLocationIndicator: View {
 
     var body: some View {
         ZStack {
-            // Lingkaran pancaran cahaya yang berdenyut
             Circle()
                 .fill(
                     RadialGradient(
@@ -43,7 +42,6 @@ struct UserLocationIndicator: View {
                         )
                     )
                     .frame(width: 56, height: 56)
-                    //.offset(y: -18)
                     .rotationEffect(.degrees(headingDegrees), anchor: .bottom)
                     .offset(y: -27)
                     .animation(.easeInOut(duration: 0.25), value: headingDegrees)

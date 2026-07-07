@@ -57,7 +57,6 @@ private struct StartButton: View {
         Button(action: action) {
             HStack(spacing: 4) {
                 Text("Start")
-//                    .fontWeight(.semibold)
                 Image(systemName: "chevron.forward.2")
                     .font(.system(size: 13))
             }
