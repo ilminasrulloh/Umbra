@@ -30,9 +30,10 @@ struct MapView: View {
     @State var currentPresentationDetents: PresentationDetent = .fraction(0.1)
     @FocusState var clickedTextField: Field?
     
+    
+    @State private var selectedRouteKind = "shaded"
     @State private var directionsSheetState: DirectionsSheetState = .hidden
-    @State private var options = RouteOption.sample
-
+    
     /// Tujuan yang sudah di-resolve jadi koordinat asli (hasil tap "See Routes")
     @State private var resolvedDestination: NavigationDestination?
     
@@ -58,11 +59,17 @@ struct MapView: View {
                 Map(position: $viewModel.userCurrentPosition) {
                     UserAnnotation()
 
+                    
                     if let route = viewModel.calculatedRoutes.first {
                         MapPolyline(route.polyline)
-                            .stroke(.blue, lineWidth: 6)
+                            .stroke(.yellow, lineWidth: 3)
                     }
 
+                    if let route = viewModel.shadedRoute, !route.coordinates.isEmpty {
+                        MapPolyline(coordinates: route.coordinates)
+                            .stroke(.blue, lineWidth: 6)
+                    }
+                    
                     if let destination = resolvedDestination {
                         Marker(destination.title, coordinate: destination.coordinate)
                             .tint(.red)
@@ -104,10 +111,8 @@ struct MapView: View {
                             }
                             guard let destinationCoordinate = resolvedDestination?.coordinate else { return }
                             Task {
-                                await viewModel.calculateWalkingRoute(
-                                    from: resolvedOrigin?.coordinate,
-                                    to: destinationCoordinate
-                                )
+                                await viewModel.calculateShadedWalkingRoute(to: destination.coordinate)
+                                await viewModel.calculateWalkingRoute(to: destination.coordinate)
                             }
                         }
                     )
@@ -124,7 +129,7 @@ struct MapView: View {
                     )
                 }
 
-                if directionsSheetState != .hidden, let recommended = options.first(where: { $0.isRecommended }) {
+                if directionsSheetState != .hidden, let recommended = viewModel.routeOptions.first(where: { $0.isRecommended }) {
                     VStack {
                         Spacer()
                         RouteCalloutBubble(option: recommended)
@@ -139,7 +144,7 @@ struct MapView: View {
                         DirectionsSheet(
                             originTitle: resolvedOrigin?.title ?? "My Location",
                             destinationTitle: resolvedDestination?.title ?? "Tujuan",
-                            options: options,
+                            options: viewModel.routeOptions,
                             showLegend: true,
                             isExpanded: directionsSheetState == .expanded,
                             collapsedHeight: collapsedSheetHeight,
@@ -157,6 +162,8 @@ struct MapView: View {
                                         resolvedOrigin = nil
                                         editingField = .destination
                                         viewModel.calculatedRoutes = []
+                                        viewModel.shadedRoute = nil
+                                        viewModel.userDestinationText = ""
                                     }
                                 }
                             },
@@ -212,7 +219,8 @@ struct MapView: View {
             NavigateView(
                 locationManager: viewModel.locationManager,
                 destination: destination.coordinate,
-                destinationTitle: destination.title
+                destinationTitle: destination.title,
+                selectedRouteKind: selectedRouteKind
             )
         }
     }

@@ -116,6 +116,37 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
     var showDestination = true
     
     var calculatedRoutes: [MKRoute] = []
+    var shadedRoute: RouteResult?
+    
+    var routeOptions: [RouteOption] {
+        var options: [RouteOption] = []
+        
+        if let shaded = shadedRoute, !shaded.coordinates.isEmpty {
+            options.append(RouteOption(
+                kind: "shaded",
+                shadePercent: shaded.shadePercent,
+                subtitle: shaded.shadePercent >= 40 ? "Recommended - stays mostly shaded" : "Some sunshine along the way",
+                minutes: max(Int(shaded.estimatedTime/60), 1),
+                meters: Int(shaded.totalLength),
+                isRecommended: true))
+        }
+        
+        if let plain = calculatedRoutes.first {
+            options.append(RouteOption(
+                kind: "fastest",
+                shadePercent: 0,
+                subtitle: "Fastest",
+                minutes: max(Int(plain.expectedTravelTime/60), 1),
+                meters: Int(plain.distance),
+                isRecommended: false))
+        }
+        
+        return options
+    }
+    
+    private var routeGraph: RouteGraph?
+    private var routePlanner: RoutePlanner?
+    private let snapThresholdMeters: CLLocationDistance = 20
     
     private var searchDebounceTask: Task<Void, Never>?
     private var distanceCache: [String: String] = [:]
@@ -127,6 +158,7 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
     override init() {
         super.init()
         InitSearchCompleter()
+        loadRouteGraph()
     }
     
     func InitSearchCompleter() {
@@ -180,26 +212,29 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
         locationManager.RequestUserLocation()
     }
     
-    @MainActor
-    func calculateWalkingRoute(from originCoordinate: CLLocationCoordinate2D? = nil, to destination: CLLocationCoordinate2D) async {
-        guard let origin = originCoordinate ?? locationManager.userLocation?.coordinate else {
-            calculatedRoutes = []
-            return
+    /// Hitung rute jalan kaki asli dari lokasi user saat ini ke koordinat tujuan.
+    /// Dipanggil setelah user tap "See Routes", supaya layar preview rute
+    /// menampilkan jalur & estimasi yang beneran, bukan data sample.
+        @MainActor
+        func calculateWalkingRoute(to destination: CLLocationCoordinate2D) async {
+            guard let origin = locationManager.userLocation?.coordinate else {
+                calculatedRoutes = []
+                return
+            }
+    
+            let request = MKDirections.Request()
+            request.source = MKMapItem(placemark: MKPlacemark(coordinate: origin))
+            request.destination = MKMapItem(placemark: MKPlacemark(coordinate: destination))
+            request.transportType = .walking
+            request.requestsAlternateRoutes = true
+    
+            do {
+                let response = try await MKDirections(request: request).calculate()
+                calculatedRoutes = response.routes
+            } catch {
+                calculatedRoutes = []
+            }
         }
-
-        let request = MKDirections.Request()
-        request.source = MKMapItem(placemark: MKPlacemark(coordinate: origin))
-        request.destination = MKMapItem(placemark: MKPlacemark(coordinate: destination))
-        request.transportType = .walking
-        request.requestsAlternateRoutes = true
-
-        do {
-            let response = try await MKDirections(request: request).calculate()
-            calculatedRoutes = response.routes
-        } catch {
-            calculatedRoutes = []
-        }
-    }
     
     func GetCurrentWeather(for location: CLLocation) async {
         do {
@@ -278,6 +313,113 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
             return "\(Int(meters)) m"
         } else {
             return String(format: "%.1f km", meters / 1000)
+        }
+    }
+    
+    private func loadRouteGraph() {
+        guard let url = Bundle.main.url(forResource: "1400", withExtension: "json") else { return }
+        do {
+            let graph = try RouteGraph(jsonURL: url)
+            self.routeGraph = graph
+            self.routePlanner = RoutePlanner(graph: graph)
+        } catch {
+            // handle/log if you want visibility here
+        }
+    }
+    
+    @MainActor
+    func calculateShadedWalkingRoute(to destination: CLLocationCoordinate2D) async {
+        guard let origin = locationManager.userLocation?.coordinate else {
+            shadedRoute = nil
+            return
+        }
+        guard let graph = routeGraph, let planner = routePlanner else {
+            // Graph missing entirely — fall back to plain Apple Maps walking route
+            await legacyAppleMapsRoute(from: origin, to: destination)
+            return
+        }
+        
+        let startSnap = graph.snap(to: origin)
+        let endSnap = graph.snap(to: destination)
+        
+        guard case .snapped(let sNode, _) = startSnap,
+              case .snapped(let eNode, _) = endSnap else {
+            await legacyAppleMapsRoute(from: origin, to: destination)
+            return
+        }
+        
+        async let lead = nativeWalkingLeg(from: origin, to: sNode.coordinate)
+        async let trail = nativeWalkingLeg(from: eNode.coordinate, to: destination)
+        let (leadLeg, trailLeg) = await (lead, trail)
+        
+        do {
+            let core = try planner.shadedRoute(from: sNode.id, to: eNode.id)
+            shadedRoute = stitch(lead: leadLeg, core: core, trail: trailLeg)
+        } catch {
+            await legacyAppleMapsRoute(from: origin, to: destination)
+        }
+    }
+    
+    /// Bridges origin/destination to the graph, exactly like NavigateViewModel does —
+    /// this is the "apple map" leg on either end of the "json" core.
+    private func nativeWalkingLeg(from: CLLocationCoordinate2D, to: CLLocationCoordinate2D) async -> RouteResult? {
+        guard CLLocation(latitude: from.latitude, longitude: from.longitude)
+            .distance(from: CLLocation(latitude: to.latitude, longitude: to.longitude)) > snapThresholdMeters
+        else { return nil }
+        
+        let request = MKDirections.Request()
+        request.source = MKMapItem(placemark: MKPlacemark(coordinate: from))
+        request.destination = MKMapItem(placemark: MKPlacemark(coordinate: to))
+        request.transportType = .walking
+        
+        do {
+            let response = try await MKDirections(request: request).calculate()
+            guard let route = response.routes.first else { return nil }
+            return RouteResult(
+                nodeIds: [],
+                coordinates: route.polyline.coordinates,
+                totalLength: route.distance,
+                totalWeight: 0,
+                estimatedTime: route.expectedTravelTime,
+                label: "Approach Leg"
+            )
+        } catch {
+            return nil
+        }
+    }
+    
+    private func stitch(lead: RouteResult?, core: RouteResult, trail: RouteResult?) -> RouteResult {
+        var coords = lead?.coordinates ?? []
+        coords += core.coordinates
+        if let trail { coords += trail.coordinates }
+        return RouteResult(
+            nodeIds: core.nodeIds,
+            coordinates: coords,
+            totalLength: (lead?.totalLength ?? 0) + core.totalLength + (trail?.totalLength ?? 0),
+            totalWeight: core.totalWeight,
+            estimatedTime: (lead?.estimatedTime ?? 0) + core.estimatedTime + (trail?.estimatedTime ?? 0),
+            label: core.label,
+            shadedLength: core.shadedLength
+        )
+    }
+    
+    /// Fallback when the area isn't in the graph at all — plain Apple Maps route.
+    @MainActor
+    private func legacyAppleMapsRoute(from origin: CLLocationCoordinate2D, to destination: CLLocationCoordinate2D) async {
+        let request = MKDirections.Request()
+        request.source = MKMapItem(placemark: MKPlacemark(coordinate: origin))
+        request.destination = MKMapItem(placemark: MKPlacemark(coordinate: destination))
+        request.transportType = .walking
+        do {
+            let response = try await MKDirections(request: request).calculate()
+            guard let route = response.routes.first else { shadedRoute = nil; return }
+            shadedRoute = RouteResult(
+                nodeIds: [], coordinates: route.polyline.coordinates,
+                totalLength: route.distance, totalWeight: 0,
+                estimatedTime: route.expectedTravelTime, label: "Apple Maps (no graph coverage)"
+            )
+        } catch {
+            shadedRoute = nil
         }
     }
 }
