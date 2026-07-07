@@ -273,21 +273,6 @@ final class RoutePlanner {
         let edges = try dijkstra(from: start, to: end) { $0.weight }
         return buildResult(from: edges, label: "Shadiest (JSON graph)")
     }
-    
-    private static func indoorPriorityCost(for edge: RouteEdge) -> Double {
-        let environmentPenalty: Double
-        switch edge.environment {
-        case .indoor: environmentPenalty = 1
-        case .shaded: environmentPenalty = 4
-        case .sunny:  environmentPenalty = 10
-        }
-        return edge.length * environmentPenalty
-    }
-    
-    func shadedRoute(from start: String, to end: String) throws -> RouteResult {
-        let edges = try dijkstra(from: start, to: end, cost: Self.indoorPriorityCost)
-        return buildResult(from: edges, label: "Indoor-priority")
-    }
 }
 
 @MainActor
@@ -295,7 +280,6 @@ final class RoutePlanner {
 final class NavigateViewModel: NSObject {
     
     var shadedRouteResult: RouteResult?
-    //    var route: MKRoute?
     var camera: MapCameraPosition = .automatic
     var currentStepIndex: Int = 0
     var distanceToNextStep: CLLocationDistance = 0

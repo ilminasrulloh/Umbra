@@ -201,9 +201,10 @@ struct MapView: View {
                                 }
                                 clickedTextField = .destination
                             },
-                            onStart: { _ in
+                            onStart: { option in
                                 // Rute sudah dilihat user di layar preview — sekarang pindah ke NavigateView
                                 // untuk mulai navigasi langkah-demi-langkah yang sebenarnya.
+                                selectedRouteKind = option.kind
                                 navigateDestination = resolvedDestination
                             }
                         )
