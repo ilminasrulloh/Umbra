@@ -8,7 +8,7 @@
 import SwiftUI
 
 /// Reusable Component for Route Options
-struct RouteOptionCard: View {
+struct RouteOptionsCard: View {
     let option: RouteOption
     var onStart: () -> Void
 
@@ -72,7 +72,7 @@ private struct StartButton: View {
 #Preview("Card states") {
     VStack(spacing: 12) {
         ForEach(RouteOption.sample) { option in
-            RouteOptionCard(option: option) {
+            RouteOptionsCard(option: option) {
                 print("Start tapped: \(option.title)")
             }
         }
