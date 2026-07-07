@@ -11,6 +11,8 @@ struct DirectionsSheet: View {
     let destinationTitle: String
     let options: [RouteOption]
     var showLegend: Bool = false
+    var selectedKind: String
+    var onSelectOption: (RouteOption) -> Void
     
     /// true = Gambar 3 (full route list), false = Gambar 2 (just origin/destination)
     var isExpanded: Bool
@@ -170,7 +172,11 @@ struct DirectionsSheet: View {
                 ScrollView {
                     VStack(spacing: 14) {
                         ForEach(options) { option in
-                            RouteOptionsCard(option: option) {
+                            RouteOptionsCard(
+                                option: option,
+                                isSelected: option.kind == selectedKind,
+                                onSelect: { onSelectOption(option) }
+                            ) {
                                 onStart(option)
                             }
                         }
@@ -179,7 +185,10 @@ struct DirectionsSheet: View {
                     .padding(.bottom, 20)
                 }
             } else if let recommended = recommendedOption {
-                RouteOptionsCard(option: recommended) {
+                RouteOptionsCard(
+                    option: recommended,
+                    isSelected: recommended.kind == selectedKind,
+                    onSelect: { onSelectOption(recommended) }) {
                     onStart(recommended)
                 }
                 .padding(.horizontal, 20)
@@ -239,38 +248,38 @@ struct RouteLegendView: View {
     }
 }
 
-#Preview("Collapsed (Gambar 2)") {
-    DirectionsSheet(
-        originTitle: "My Location",
-        destinationTitle: "The Breeze",
-        options: RouteOption.sample,
-        showLegend: true,
-        isExpanded: false,
-        collapsedHeight: 260,
-        expandedHeight: 700,
-        onClose: {},
-        onExpand: {},
-        onCollapse: {},
-        onEditOrigin: {},
-        onEditDestination: {},
-        onStart: { print("Start: \($0.title)") }
-    )
-}
-
-#Preview("Expanded (Gambar 3)") {
-    DirectionsSheet(
-        originTitle: "My Location",
-        destinationTitle: "The Breeze",
-        options: RouteOption.sample,
-        showLegend: true,
-        isExpanded: true,
-        collapsedHeight: 260,
-        expandedHeight: 700,
-        onClose: {},
-        onExpand: {},
-        onCollapse: {},
-        onEditOrigin: {},
-        onEditDestination: {},
-        onStart: { print("Start: \($0.title)") }
-    )
-}
+//#Preview("Collapsed (Gambar 2)") {
+//    DirectionsSheet(
+//        originTitle: "My Location",
+//        destinationTitle: "The Breeze",
+//        options: RouteOption.sample,
+//        showLegend: true,
+//        isExpanded: false,
+//        collapsedHeight: 260,
+//        expandedHeight: 700,
+//        onClose: {},
+//        onExpand: {},
+//        onCollapse: {},
+//        onEditOrigin: {},
+//        onEditDestination: {},
+//        onStart: { print("Start: \($0.title)") }
+//    )
+//}
+//
+//#Preview("Expanded (Gambar 3)") {
+//    DirectionsSheet(
+//        originTitle: "My Location",
+//        destinationTitle: "The Breeze",
+//        options: RouteOption.sample,
+//        showLegend: true,
+//        isExpanded: true,
+//        collapsedHeight: 260,
+//        expandedHeight: 700,
+//        onClose: {},
+//        onExpand: {},
+//        onCollapse: {},
+//        onEditOrigin: {},
+//        onEditDestination: {},
+//        onStart: { print("Start: \($0.title)") }
+//    )
+//}

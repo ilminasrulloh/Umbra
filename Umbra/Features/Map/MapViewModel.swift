@@ -327,6 +327,17 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
         }
     }
     
+    func midpointCoordinate(for kind: String) -> CLLocationCoordinate2D? {
+        switch kind {
+        case "fastest":
+                guard let coords = calculatedRoutes.first?.polyline.coordinates, !coords.isEmpty else { return nil }
+                return coords[coords.count / 2]
+            default: 
+                guard let coords = shadedRoute?.coordinates, !coords.isEmpty else { return nil }
+                return coords[coords.count / 2]
+            }
+    }
+    
     @MainActor
     func calculateShadedWalkingRoute(to destination: CLLocationCoordinate2D) async {
         guard let origin = locationManager.userLocation?.coordinate else {

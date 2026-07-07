@@ -44,40 +44,63 @@ struct MapView: View {
     /// Field mana yang lagi diedit di BottomPanelSheetView — menentukan
     /// apakah hasil "See Routes" berikutnya mengisi origin atau destination.
     @State private var editingField: Field = .destination
-
+    
     /// Diisi saat tombol "Start" di DirectionsSheet ditekan — trigger fullScreenCover ke NavigateView
     @State private var navigateDestination: NavigationDestination?
-
+    
     /// Tinggi sheet saat collapsed. Dibesarkan dari 260 -> 400 karena sekarang
     /// kartu rute yang direkomendasikan (RouteOptionCard) ikut ditampilkan
     /// walau sheet belum di-expand, jadi butuh ruang lebih supaya tidak terpotong.
     private let collapsedSheetHeight: CGFloat = 400
+    
+    private var selectedOption: RouteOption? {
+        viewModel.routeOptions.first(where: { $0.kind == selectedRouteKind })
+    }
     
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .bottom) {
                 Map(position: $viewModel.userCurrentPosition) {
                     UserAnnotation()
-
+                    
                     
                     if let route = viewModel.calculatedRoutes.first {
                         MapPolyline(route.polyline)
-                            .stroke(.yellow, lineWidth: 3)
+                            .stroke(
+                                selectedRouteKind == "fastest" ? .yellow : .yellow.opacity(0.3),
+                                lineWidth: selectedRouteKind == "fastest" ? 6 : 3)
                     }
-
+                    
                     if let route = viewModel.shadedRoute, !route.coordinates.isEmpty {
                         MapPolyline(coordinates: route.coordinates)
-                            .stroke(.blue, lineWidth: 6)
+                            .stroke(
+                                selectedRouteKind == "shaded" ? .blue : .blue.opacity(0.3),
+                                lineWidth: selectedRouteKind == "shaded" ? 6 : 3)
                     }
                     
                     if let destination = resolvedDestination {
                         Marker(destination.title, coordinate: destination.coordinate)
                             .tint(.red)
                     }
-
+                    
                     if let origin = resolvedOrigin {
                         Marker(origin.title, coordinate: origin.coordinate)
                             .tint(.green)
+                    }
+                    
+                    
+                    ForEach(viewModel.routeOptions, id: \.kind) { option in
+                        if let coordinate = viewModel.midpointCoordinate(for: option.kind) {
+                            Annotation("", coordinate: coordinate) {
+                                RouteCalloutBubble(option: option, isSelected: option.kind == selectedRouteKind)
+                                    .onTapGesture {
+                                        withAnimation(.spring()) {
+                                            selectedRouteKind = option.kind
+                                        }
+                                    }
+                            }
+                            .annotationTitles(.hidden)
+                        }
                     }
                 }
                 .ignoresSafeArea()
@@ -146,6 +169,10 @@ struct MapView: View {
                             destinationTitle: resolvedDestination?.title ?? "Tujuan",
                             options: viewModel.routeOptions,
                             showLegend: true,
+                            selectedKind: selectedRouteKind,
+                            onSelectOption: { option in
+                                selectedRouteKind = option.kind
+                            },
                             isExpanded: directionsSheetState == .expanded,
                             collapsedHeight: collapsedSheetHeight,
                             expandedHeight: geo.size.height * 0.92,
@@ -227,6 +254,7 @@ struct MapView: View {
     }
 }
 
+
 struct BottomPanelSheetView: View {
     @Bindable var viewModel: MapViewModel
     @Binding var currentPresentationDetents: PresentationDetent
@@ -238,13 +266,13 @@ struct BottomPanelSheetView: View {
     var editingField: Field
     /// NEW: called when the user taps "See Routes" on a suggestion, dengan tujuan yang sudah di-resolve.
     var onSeeRoutes: (NavigationDestination) -> Void
-
+    
     var isExtended: Bool { currentPresentationDetents == .large }
-
+    
     private var activeSearchText: Binding<String> {
         editingField == .origin ? $viewModel.userOriginText : $viewModel.userDestinationText
     }
-
+    
     private var searchPlaceholder: String {
         editingField == .origin ? "Search Origin" : "Search Destination"
     }
@@ -348,7 +376,7 @@ struct LocationSuggestionView: View {
     var result: MKLocalSearchCompletion
     /// NEW: called when "See Routes" is tapped for this suggestion.
     var onSeeRoutes: (NavigationDestination) -> Void
-
+    
     var body: some View {
         Button {
             selectDestination()
@@ -368,19 +396,19 @@ struct LocationSuggestionView: View {
                     VStack(alignment: .leading) {
                         Text(result.title)
                             .foregroundStyle(Color(.black))
-//                        HStack {
-//                            Text(distanceText)
-//                                .layoutPriority(1)
-//                            Text("•")
-//                            Text(result.subtitle)
-//                                .lineLimit(1)
-//                                .truncationMode(.tail)
-//                        }
+                        //                        HStack {
+                        //                            Text(distanceText)
+                        //                                .layoutPriority(1)
+                        //                            Text("•")
+                        //                            Text(result.subtitle)
+                        //                                .lineLimit(1)
+                        //                                .truncationMode(.tail)
+                        //                        }
                         Text(result.subtitle)
                             .lineLimit(1)
                             .truncationMode(.tail)
-                        .foregroundStyle(Color(.systemGray2))
-                        .font(.subheadline)
+                            .foregroundStyle(Color(.systemGray2))
+                            .font(.subheadline)
                     }
                 }
                 
@@ -412,11 +440,11 @@ struct LocationSuggestionView: View {
         .cornerRadius(20)
         .padding(.bottom, viewModel.results.first == result ? 8 : 0)
         .padding(.horizontal, 30)
-//        .task(id: result.stableID) {
-//            distanceText = await viewModel.resolveDistance(for: result)
-//        }
+        //        .task(id: result.stableID) {
+        //            distanceText = await viewModel.resolveDistance(for: result)
+        //        }
     }
-
+    
     /// Resolve hasil pencarian jadi koordinat asli lewat MapViewModel,
     /// lalu teruskan ke onSeeRoutes begitu selesai.
     ///
@@ -437,25 +465,31 @@ struct LocationSuggestionView: View {
 /// The speech-bubble style callout pointing at the route on the map.
 private struct RouteCalloutBubble: View {
     let option: RouteOption
+    var isSelected: Bool = true
     
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "chart.bar.fill")
+                .font(.system(size: 6))
             VStack(alignment: .leading, spacing: 2) {
                 Text(option.title)
-                    .font(.system(size: 15, weight: .bold))
+                    .font(.system(size: 10, weight: .bold))
                 Text(option.subtitle)
-                    .font(.system(size: 13))
+                    .font(.system(size: 8))
                     .opacity(0.85)
             }
             Spacer()
         }
+        .frame(width: 100)
         .foregroundStyle(.white)
         .padding(14)
-        .background(Color.accentColor)
+        .background(isSelected ? Color.accentColor : Color(.systemGray))
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: .black.opacity(isSelected ? 0.2 : 0.08), radius: isSelected ? 8 : 3)
+        .scaleEffect(isSelected ? 1.0 : 0.92)
     }
 }
+
 struct weatherAndUVIndexView: View {
     @Bindable var viewModel: MapViewModel
     @Binding var expandUVIndexButton: Bool
