@@ -353,7 +353,7 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
         let (leadLeg, trailLeg) = await (lead, trail)
         
         do {
-            let core = try planner.shadedRoute(from: sNode.id, to: eNode.id)
+            let core = try planner.shadiestRoute(from: sNode.id, to: eNode.id)
             shadedRoute = stitch(lead: leadLeg, core: core, trail: trailLeg)
         } catch {
             await legacyAppleMapsRoute(from: origin, to: destination)
