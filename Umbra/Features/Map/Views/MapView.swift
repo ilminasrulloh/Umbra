@@ -32,6 +32,7 @@ struct MapView: View {
     
     @State private var directionsSheetState: DirectionsSheetState = .hidden
     @State private var options = RouteOption.sample
+//    @State private var options: RouteOption?
 
     /// Tujuan yang sudah di-resolve jadi koordinat asli (hasil tap "See Routes")
     @State private var resolvedDestination: NavigationDestination?
@@ -50,10 +51,11 @@ struct MapView: View {
                 Map(position: $viewModel.userCurrentPosition) {
                     UserAnnotation()
 
-//                    if let route = viewModel.calculatedRoutes.first {
-//                        MapPolyline(route.polyline)
-//                            .stroke(.blue, lineWidth: 6)
-//                    }
+                    
+                    if let route = viewModel.calculatedRoutes.first {
+                        MapPolyline(route.polyline)
+                            .stroke(.yellow, lineWidth: 3)
+                    }
 
                     if let route = viewModel.shadedRoute, !route.coordinates.isEmpty {
                         MapPolyline(coordinates: route.coordinates)
@@ -89,6 +91,7 @@ struct MapView: View {
                                 directionsSheetState = .collapsed
                             }
                             Task {
+                                await viewModel.calculateShadedWalkingRoute(to: destination.coordinate)
                                 await viewModel.calculateWalkingRoute(to: destination.coordinate)
                             }
                         }
@@ -138,6 +141,7 @@ struct MapView: View {
                                         resolvedDestination = nil
                                         viewModel.calculatedRoutes = []
                                         viewModel.shadedRoute = nil
+                                        viewModel.userDestinationText = ""
                                     }
                                 }
                             },
