@@ -58,6 +58,10 @@ struct DirectionsSheet: View {
         options.first(where: { $0.isRecommended })
     }
     
+    private var chosenOption: RouteOption? {
+        options.first(where: { $0.kind == selectedKind })
+    }
+    
     var body: some View {
         VStack(spacing: 0) {
             // Drag handle — swipe down to close/collapse, swipe up to expand.
@@ -184,15 +188,17 @@ struct DirectionsSheet: View {
                     .padding(.horizontal, 20)
                     .padding(.bottom, 20)
                 }
-            } else if let recommended = recommendedOption {
+                
+            } else if let chosen = chosenOption ?? recommendedOption {
                 RouteOptionsCard(
-                    option: recommended,
-                    isSelected: recommended.kind == selectedKind,
-                    onSelect: { onSelectOption(recommended) }) {
-                    onStart(recommended)
-                }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 20)
+                    option: chosen,
+                    isSelected: true,
+                    onSelect: { onSelectOption(chosen) }) {
+                        onStart(chosen)
+                    }
+                
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 20)
             } else {
                 Spacer(minLength: 12)
             }
@@ -208,14 +214,14 @@ private struct RouteEndpointsRow: View {
     let originTitle: String
     let destinationTitle: String
     var onEditDestination: () -> Void
-
+    
     var body: some View {
         VStack(spacing: 0) {
             LocationRow(kind: .origin, title: originTitle)
-
+            
             Divider()
                 .padding(.leading, 54)
-
+            
             Button(action: onEditDestination) {
                 LocationRow(kind: .destination, title: destinationTitle)
             }
