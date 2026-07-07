@@ -33,16 +33,23 @@ struct NavigateView: View {
     let initialDestination: CLLocationCoordinate2D
     let destinationTitle: String
 
+    /// Dipanggil sekali, tepat sebelum NavigateView menutup dirinya sendiri karena
+    /// user sudah sampai tujuan (BUKAN saat user menekan "Selesai" manual). MapView
+    /// memakai ini untuk menampilkan bottom sheet kedatangan setelah kembali ke peta.
+    var onArrive: (ArrivalInfo) -> Void = { _ in }
+
     init(
         locationManager: LocationManager,
         destination: CLLocationCoordinate2D,
         destinationTitle: String = "Tujuan",
-        selectedRouteKind: String = "shaded"
+        selectedRouteKind: String = "shaded",
+        onArrive: @escaping (ArrivalInfo) -> Void = { _ in }
     ) {
         self.locationManager = locationManager
         self.initialDestination = destination
         self.destinationTitle = destinationTitle
         self.selectedRouteKind = selectedRouteKind
+        self.onArrive = onArrive
     }
 
     var body: some View {
@@ -146,6 +153,10 @@ struct NavigateView: View {
             guard viewModel.isNavigating, let newLocation = locationManager.userLocation else { return }
 
             viewModel.updateProgress(userLocation: newLocation)
+            // `updateProgress` bisa saja baru mendeteksi kedatangan dan menghentikan
+            // navigasi (isNavigating -> false) — kalau begitu, hentikan di sini supaya
+            // tidak menggerakkan kamera / mengecek off-route untuk navigasi yang sudah berakhir.
+            guard viewModel.isNavigating else { return }
             viewModel.setCameraTarget(
                 coordinate: newLocation.coordinate,
                 heading: effectiveNavigationHeading(location: newLocation)
@@ -163,6 +174,15 @@ struct NavigateView: View {
                 coordinate: currentLocation.coordinate,
                 heading: effectiveNavigationHeading(location: currentLocation)
             )
+        }
+        // Sinyal "sudah sampai" dari ViewModel — kirim data ke MapView lalu tutup
+        // layar ini, supaya bottom sheet kedatangan muncul di atas peta, bukan
+        // di atas layar navigasi yang sedang menghilang.
+        .onChange(of: viewModel.didArrive) { _, arrived in
+            guard arrived else { return }
+            let minutes = viewModel.minutesOfSunAvoided ?? 0
+            onArrive(ArrivalInfo(destinationTitle: destinationTitle, minutesOfSunAvoided: minutes))
+            dismiss()
         }
     }
 
