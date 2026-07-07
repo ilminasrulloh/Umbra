@@ -9,7 +9,8 @@ import SwiftUI
 import MapKit
 
 struct InstructionCarouselCard: View {
-    let steps: [MKRoute.Step]
+//    let steps: [MKRoute.Step]
+    let steps: [NavigationStep]
     @Binding var selectedIndex: Int
 
     /// Index step yang SEDANG aktif secara nyata (bukan yang lagi di-preview lewat swipe)
@@ -17,6 +18,31 @@ struct InstructionCarouselCard: View {
     /// Jarak live (real-time, dari GPS) ke step yang sedang aktif
     let liveDistanceToActiveStep: CLLocationDistance
 
+//    var body: some View {
+//        VStack(spacing: 10) {
+//            TabView(selection: $selectedIndex) {
+//                ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
+//                    InstructionCardContent(
+//                        step: step,
+//                        distanceText: distanceText(for: index, step: step)
+//                    )
+//                    .tag(index)
+//                    .padding(.horizontal, 20)
+//                }
+//            }
+//            .tabViewStyle(.page(indexDisplayMode: .never))
+//            .frame(height: 92)
+//
+//            if steps.count > 1 {
+//                PageDots(count: steps.count, currentIndex: selectedIndex)
+//            }
+//        }
+//        .padding(.vertical, 14)
+//        .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 22))
+//        .shadow(color: .black.opacity(0.15), radius: 10, y: 4)
+//        .padding(.horizontal)
+//    }
+    
     var body: some View {
         VStack(spacing: 10) {
             TabView(selection: $selectedIndex) {
@@ -42,9 +68,10 @@ struct InstructionCarouselCard: View {
         .padding(.horizontal)
     }
 
+
     /// Untuk step yang sedang aktif, pakai jarak live dari GPS.
     /// Untuk step lain (yang lagi di-preview), pakai panjang segmen step itu sendiri.
-    private func distanceText(for index: Int, step: MKRoute.Step) -> String {
+    private func distanceText(for index: Int, step: NavigationStep) -> String {
         let meters = index == activeStepIndex ? liveDistanceToActiveStep : step.distance
         if meters >= 1000 {
             return String(format: "%.1f km", meters / 1000)
@@ -54,7 +81,8 @@ struct InstructionCarouselCard: View {
 }
 
 private struct InstructionCardContent: View {
-    let step: MKRoute.Step
+//    let step: MKRoute.Step
+    let step: NavigationStep
     let distanceText: String
 
     var body: some View {

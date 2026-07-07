@@ -50,11 +50,16 @@ struct MapView: View {
                 Map(position: $viewModel.userCurrentPosition) {
                     UserAnnotation()
 
-                    if let route = viewModel.calculatedRoutes.first {
-                        MapPolyline(route.polyline)
+//                    if let route = viewModel.calculatedRoutes.first {
+//                        MapPolyline(route.polyline)
+//                            .stroke(.blue, lineWidth: 6)
+//                    }
+
+                    if let route = viewModel.shadedRoute, !route.coordinates.isEmpty {
+                        MapPolyline(coordinates: route.coordinates)
                             .stroke(.blue, lineWidth: 6)
                     }
-
+                    
                     if let destination = resolvedDestination {
                         Marker(destination.title, coordinate: destination.coordinate)
                             .tint(.red)
@@ -132,6 +137,7 @@ struct MapView: View {
                                         showBottomPanelSheet = true
                                         resolvedDestination = nil
                                         viewModel.calculatedRoutes = []
+                                        viewModel.shadedRoute = nil
                                     }
                                 }
                             },

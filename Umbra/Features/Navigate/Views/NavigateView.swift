@@ -52,8 +52,14 @@ struct NavigateView: View {
                         .annotationTitles(.hidden)
                     }
 
-                    if let route = viewModel.route {
-                        MapPolyline(route.polyline)
+                    // Normal
+//                    if let route = viewModel.route {
+//                        MapPolyline(route.polyline)
+//                            .stroke(.blue, lineWidth: 6)
+//                    }
+                    
+                    if let shaded = viewModel.shadedRouteResult, !shaded.coordinates.isEmpty {
+                        MapPolyline(coordinates: shaded.coordinates)
                             .stroke(.blue, lineWidth: 6)
                     }
 
