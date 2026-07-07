@@ -243,7 +243,24 @@ struct MapView: View {
                 locationManager: viewModel.locationManager,
                 destination: destination.coordinate,
                 destinationTitle: destination.title,
-                selectedRouteKind: selectedRouteKind
+                selectedRouteKind: selectedRouteKind,
+                onArrivalDismissed: {
+                    // Sama seperti reset di onClose DirectionsSheet — supaya begitu
+                    // kembali dari NavigateView, MapView bersih lagi (cuma lokasi
+                    // user terkini), tidak ada sisa rute/marker/destinasi lama.
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.9)) {
+                        directionsSheetState = .hidden
+                        currentPresentationDetents = .fraction(0.1)
+                        clickedTextField = nil
+                        showBottomPanelSheet = true
+                        resolvedDestination = nil
+                        resolvedOrigin = nil
+                        editingField = .destination
+                        viewModel.calculatedRoutes = []
+                        viewModel.shadedRoute = nil
+                        viewModel.userDestinationText = ""
+                    }
+                }
             )
         }
     }

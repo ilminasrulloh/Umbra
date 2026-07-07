@@ -25,21 +25,30 @@ struct NavigateView: View {
     let destinationTitle: String
     
     /// Kontrol tampil/tidaknya bottom sheet "kamu sudah sampai". Muncul begitu
-    /// `viewModel.didArrive` jadi true, dan HANYA tertutup lewat tombol checkmark
-    /// di `ArrivalSummarySheet` — bukan swipe-to-dismiss — supaya user secara sadar
-    /// mengonfirmasi sebelum kembali ke MapView.
+    /// `viewModel.didArrive` jadi true. Sekarang bisa ditutup lewat tombol checkmark
+    /// ATAU swipe-down — keduanya sama-sama memicu `.sheet(onDismiss:)` di bawah,
+    /// yang menutup NavigateView dan kembali ke MapView.
     @State private var showArrivalSheet = false
+
+    /// Dipanggil sesaat sebelum NavigateView menutup diri (baik lewat tap checkmark
+    /// maupun swipe-down di ArrivalSummarySheet). MapView bisa pakai closure ini untuk
+    /// membersihkan tampilan rute yang sempat digambar sebelumnya (destinasi terpilih,
+    /// polyline hasil kalkulasi, dsb), supaya begitu kembali ke MapView cuma lokasi
+    /// user terkini yang tampil — tidak ada sisa rute lama.
+    var onArrivalDismissed: (() -> Void)? = nil
     
     init(
         locationManager: LocationManager,
         destination: CLLocationCoordinate2D,
         destinationTitle: String = "Tujuan",
-        selectedRouteKind: String = "shaded"
+        selectedRouteKind: String = "shaded",
+        onArrivalDismissed: (() -> Void)? = nil
     ) {
         self.locationManager = locationManager
         self.initialDestination = destination
         self.destinationTitle = destinationTitle
         self.selectedRouteKind = selectedRouteKind
+        self.onArrivalDismissed = onArrivalDismissed
     }
     
     var body: some View {
@@ -127,7 +136,12 @@ struct NavigateView: View {
             guard arrived else { return }
             showArrivalSheet = true
         }
-        .sheet(isPresented: $showArrivalSheet) {
+        .sheet(isPresented: $showArrivalSheet, onDismiss: {
+            // Titik ini jalan untuk KEDUA jalur: tap checkmark (yang cuma set
+            // showArrivalSheet = false) maupun swipe-down manual oleh user.
+            onArrivalDismissed?()
+            dismiss()
+        }) {
             ArrivalSummarySheet(
                 info: ArrivalInfo(
                     destinationTitle: destinationTitle,
@@ -135,14 +149,10 @@ struct NavigateView: View {
                 ),
                 onDismiss: {
                     showArrivalSheet = false
-                    dismiss()
                 }
             )
             .presentationDetents([.height(340)])
             .presentationDragIndicator(.visible)
-            // Sengaja dimatikan: user harus tap checkmark, bukan swipe-down,
-            // supaya perpindahan ke MapView selalu lewat aksi yang disengaja.
-            .interactiveDismissDisabled()
         }
     }
     var navigateMapView: some View {
@@ -424,7 +434,8 @@ struct ArrivalSummarySheet: View {
 }
 
 /// Bottom sheet yang muncul di atas NavigateView begitu user sampai tujuan.
-/// Ikon tujuan + judul di kiri, tombol checkmark di kanan (satu-satunya cara
-/// menutup sheet ini — lihat `.interactiveDismissDisabled()` di pemanggilnya),
-/// emoji besar di tengah, lalu kalimat ringkasan "menit terik matahari yang dihindari".
+/// Ikon tujuan + judul di kiri, tombol checkmark di kanan, emoji besar di tengah,
+/// lalu kalimat ringkasan "menit terik matahari yang dihindari". Bisa ditutup lewat
+/// tap checkmark ATAU swipe-down — keduanya ditangani lewat `.sheet(onDismiss:)`
+/// di NavigateView.
 
