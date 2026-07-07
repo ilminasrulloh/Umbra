@@ -32,24 +32,23 @@ struct NavigateView: View {
     /// Tujuan yang dikirim dari MapView (hasil pencarian user)
     let initialDestination: CLLocationCoordinate2D
     let destinationTitle: String
-
-    /// Dipanggil sekali, tepat sebelum NavigateView menutup dirinya sendiri karena
-    /// user sudah sampai tujuan (BUKAN saat user menekan "Selesai" manual). MapView
-    /// memakai ini untuk menampilkan bottom sheet kedatangan setelah kembali ke peta.
-    var onArrive: (ArrivalInfo) -> Void = { _ in }
+    
+    /// Kontrol tampil/tidaknya bottom sheet "kamu sudah sampai". Muncul begitu
+    /// `viewModel.didArrive` jadi true, dan HANYA tertutup lewat tombol checkmark
+    /// di `ArrivalSummarySheet` — bukan swipe-to-dismiss — supaya user secara sadar
+    /// mengonfirmasi sebelum kembali ke MapView.
+    @State private var showArrivalSheet = false
 
     init(
         locationManager: LocationManager,
         destination: CLLocationCoordinate2D,
         destinationTitle: String = "Tujuan",
-        selectedRouteKind: String = "shaded",
-        onArrive: @escaping (ArrivalInfo) -> Void = { _ in }
+        selectedRouteKind: String = "shaded"
     ) {
         self.locationManager = locationManager
         self.initialDestination = destination
         self.destinationTitle = destinationTitle
         self.selectedRouteKind = selectedRouteKind
-        self.onArrive = onArrive
     }
 
     var body: some View {
@@ -175,14 +174,29 @@ struct NavigateView: View {
                 heading: effectiveNavigationHeading(location: currentLocation)
             )
         }
-        // Sinyal "sudah sampai" dari ViewModel — kirim data ke MapView lalu tutup
-        // layar ini, supaya bottom sheet kedatangan muncul di atas peta, bukan
-        // di atas layar navigasi yang sedang menghilang.
+        // Sinyal "sudah sampai" dari ViewModel — tampilkan bottom sheet kedatangan
+        // DI ATAS layar navigasi ini. NavigateView baru benar-benar menutup diri
+        // (kembali ke MapView) setelah user menekan tombol checkmark di sheet.
         .onChange(of: viewModel.didArrive) { _, arrived in
             guard arrived else { return }
-            let minutes = viewModel.minutesOfSunAvoided ?? 0
-            onArrive(ArrivalInfo(destinationTitle: destinationTitle, minutesOfSunAvoided: minutes))
-            dismiss()
+            showArrivalSheet = true
+        }
+        .sheet(isPresented: $showArrivalSheet) {
+            ArrivalSummarySheet(
+                info: ArrivalInfo(
+                    destinationTitle: destinationTitle,
+                    minutesOfSunAvoided: viewModel.minutesOfSunAvoided ?? 0
+                ),
+                onDismiss: {
+                    showArrivalSheet = false
+                    dismiss()
+                }
+            )
+            .presentationDetents([.height(340)])
+            .presentationDragIndicator(.visible)
+            // Sengaja dimatikan: user harus tap checkmark, bukan swipe-down,
+            // supaya perpindahan ke MapView selalu lewat aksi yang disengaja.
+            .interactiveDismissDisabled()
         }
     }
 
@@ -360,4 +374,64 @@ struct NavigateView: View {
         destination: CLLocationCoordinate2D(latitude: -6.1754, longitude: 106.8272),
         destinationTitle: "Monas"
     )
+}
+
+/// Bottom sheet yang muncul di atas NavigateView begitu user sampai tujuan.
+/// Ikon tujuan + judul di kiri, tombol checkmark di kanan (satu-satunya cara
+/// menutup sheet ini — lihat `.interactiveDismissDisabled()` di pemanggilnya),
+/// emoji besar di tengah, lalu kalimat ringkasan "menit terik matahari yang dihindari".
+struct ArrivalSummarySheet: View {
+    let info: ArrivalInfo
+    var onDismiss: () -> Void
+    
+    var body: some View {
+        VStack(spacing: 28) {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(Color.orange)
+                        .frame(width: 36, height: 36)
+                    Image(systemName: "mappin")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+                
+                Text(info.destinationTitle)
+                    .font(.title3)
+                    .fontWeight(.bold)
+                    .lineLimit(1)
+                
+                Spacer()
+                
+                Button(action: onDismiss) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.blue)
+                            .frame(width: 36, height: 36)
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
+                }
+            }
+            
+            Text("😎")
+                .font(.system(size: 56))
+            
+            arrivalMessage
+                .font(.title3)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(Color(.label))
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 20)
+        .padding(.bottom, 24)
+    }
+    
+    private var arrivalMessage: Text {
+        let minutes = info.minutesOfSunAvoided
+        let unit = minutes == 1 ? "minute" : "minutes"
+        return Text("You're here! That's " + "\(minutes) \(unit) of sun").fontWeight(.bold)
+        + Text(" you didn't have to deal with.")
+    }
 }
