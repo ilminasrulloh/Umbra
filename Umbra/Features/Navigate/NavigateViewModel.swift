@@ -321,10 +321,10 @@ final class NavigateViewModel: NSObject {
         Date().addingTimeInterval(remainingTravelTime)
     }
     
-    /// Radius kedatangan dalam meter. Sengaja dibuat kecil (2m) sesuai kebutuhan produk,
+    /// Radius kedatangan dalam 20 meter sesuai kebutuhan produk,
     /// supaya navigasi otomatis selesai begitu user mendekati tujuan tanpa harus berdiri
     /// TEPAT di titik koordinatnya (yang nyaris mustahil dengan akurasi GPS biasa).
-    let arrivalRadiusMeters: CLLocationDistance = 15
+    let arrivalRadiusMeters: CLLocationDistance = 20
     
     /// Snapshot rute terakhir SEBELUM `stopNavigation()` membersihkannya — dipakai
     /// untuk menghitung statistik "menit terik matahari yang dihindari" di sheet kedatangan.
