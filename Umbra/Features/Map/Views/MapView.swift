@@ -63,6 +63,22 @@ struct MapView: View {
         let value = heading.trueHeading >= 0 ? heading.trueHeading : heading.magneticHeading
         return value
     }
+
+    /// Tombol untuk mengembalikan kamera peta ke lokasi user saat ini.
+    private var recenterButton: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.3)) {
+                viewModel.userCurrentPosition = .userLocation(fallback: .automatic)
+            }
+        } label: {
+            Image(systemName: "location.fill")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(.blue)
+                .padding(15)
+                .background(.regularMaterial, in: Circle())
+                .shadow(color: .black.opacity(0.15), radius: 3)
+        }
+    }
     
     var body: some View {
         GeometryReader { geo in
@@ -237,6 +253,16 @@ struct MapView: View {
                 }
             }
             .ignoresSafeArea()
+            .overlay(alignment: .bottomTrailing) {
+                recenterButton
+                    .padding(.trailing, 20)
+                    .padding(
+                        .bottom,
+                        directionsSheetState != .hidden
+                            ? collapsedSheetHeight + 16
+                            : geo.size.height * 0.1 + 16
+                    )
+            }
         }
         .fullScreenCover(item: $navigateDestination) { destination in
             NavigateView(
@@ -364,7 +390,7 @@ struct BottomPanelSheetView: View {
             
             if isExtended {
                 if activeSearchText.wrappedValue.isEmpty {
-                    Text("Nearby")
+                    Text("")
                         .fontWeight(.medium)
                         .padding(.leading, 20)
                     
