@@ -357,11 +357,7 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
 
     func sortResultsToNearest() async {
         guard let userLocation = locationManager.userLocation else { return }
-        
-        // Cuma geocode sebagian kecil hasil teratas — cukup buat kebutuhan sorting,
-        // tanpa nge-flood MKLocalSearch kalau hasil pencariannya banyak.
-        let maxResultsToSort = 6
-        let snapshot = Array(results.prefix(maxResultsToSort))
+        let snapshot = results
         
         let resultAndDistance: [(completion: MKLocalSearchCompletion, distance: CLLocationDistance)] = await withTaskGroup(of: (MKLocalSearchCompletion, CLLocationDistance)?.self) { group in
             for completion in snapshot {
@@ -370,22 +366,14 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
                     return await self.searchGate.executeBackground {
                         guard !Task.isCancelled else { return nil }
                         let request = MKLocalSearch.Request(completion: completion)
-                        let search = MKLocalSearch(request: request)
-                        
-                        // Kalau task ini dicancel (misalnya user ngetik lagi),
-                        // beneran hentikan request-nya, bukan cuma diabaikan.
-                        return await withTaskCancellationHandler {
-                            do {
-                                let response = try await search.start()
-                                guard !Task.isCancelled else { return nil }
-                                guard let coordinate = response.mapItems.first?.placemark.coordinate else { return nil }
-                                let location = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
-                                return (completion, userLocation.distance(from: location))
-                            } catch {
-                                return nil
-                            }
-                        } onCancel: {
-                            search.cancel()
+                        do {
+                            let response = try await MKLocalSearch(request: request).start()
+                            guard !Task.isCancelled else { return nil }
+                            guard let coordinate = response.mapItems.first?.placemark.coordinate else { return nil }
+                            let location = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+                            return (completion, userLocation.distance(from: location))
+                        } catch {
+                            return nil
                         }
                     } ?? nil
                 }
@@ -399,16 +387,9 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
         
         guard !Task.isCancelled else { return }
         
-        let sorted = resultAndDistance
+        self.results = resultAndDistance
             .sorted { $0.distance < $1.distance }
             .map { $0.completion }
-        
-        // Hasil yang nggak ikut di-geocode (di luar prefix) tetap ditampilkan,
-        // ditempel di belakang, biar list nggak keliatan "hilang" sebagian.
-        let sortedIDs = Set(sorted.map { $0.stableID })
-        let remainder = results.filter { !sortedIDs.contains($0.stableID) }
-        
-        self.results = sorted + remainder
     }
     
     func requestUserLocation() {
