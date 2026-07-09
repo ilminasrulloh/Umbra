@@ -104,9 +104,9 @@ struct DirectionsSheet: View {
                 Button(action: onClose) {
                     Image(systemName: "xmark")
                         .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(.black)
+                        .foregroundStyle(.primary)
                         .padding(10)
-                        .background(Color(.systemGray5))
+                        .background(Color(.systemGray4))
                         .clipShape(Circle())
                 }
             }

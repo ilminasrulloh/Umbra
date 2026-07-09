@@ -382,7 +382,7 @@ struct BottomPanelSheetView: View {
                             .font(.largeTitle)
                             .fontWeight(.light)
                             .symbolRenderingMode(.palette)
-                            .foregroundStyle(Color(.black), Color(.systemGray3))
+                            .foregroundStyle(.primary, Color(.systemGray4))
                     }
                 }
             }
@@ -438,7 +438,7 @@ struct LocationSuggestionView: View {
                     
                     VStack(alignment: .leading) {
                         Text(result.title)
-                            .foregroundStyle(Color(.black))
+                            .foregroundStyle(.primary)
                         Text(result.subtitle)
                             .lineLimit(1)
                             .truncationMode(.tail)
@@ -473,7 +473,7 @@ struct LocationSuggestionView: View {
             .background(Color(.systemGray6))
         }
         .cornerRadius(20)
-        .padding(.bottom, viewModel.results.first == result ? 8 : 0)
+        .padding(.bottom, viewModel.results.first == result ? 8 : 4)
         .padding(.horizontal, 30)
     }
     
@@ -539,10 +539,10 @@ struct weatherAndUVIndexView: View {
                         }
                         Text(viewModel.uvCategory)
                             .font(.caption)
-                            .foregroundStyle(Color(.systemGray))
+                            .foregroundStyle(.primary)
                         Text("Use Sunscreen")
                             .font(.body)
-                            .foregroundStyle(Color(.systemGray))
+                            .foregroundStyle(.primary)
                     }
                     .fontWeight(.medium)
                     .padding(.vertical, 15)
@@ -567,7 +567,7 @@ struct weatherAndUVIndexView: View {
                 }
             }
         }
-        .foregroundStyle(Color(.black))
+        .foregroundStyle(.primary)
         .padding(.top, 55)
     }
 }
