@@ -13,49 +13,49 @@ struct DirectionsSheet: View {
     let originTitle: String
     let destinationTitle: String
     var selectedKind: String
-
+    
     let options: [RouteOption]
     var onSelectOption: (RouteOption) -> Void
-
+    
     var showLegend: Bool = false
     var isExpanded: Bool
-
+    
     var collapsedHeight: CGFloat
     var expandedHeight: CGFloat
-
+    
     /// X button tapped, atau drag ke bawah saat sudah collapsed.
     var onClose: () -> Void
-
+    
     /// Drag ke atas melewati midpoint saat collapsed -> parent pindah ke expanded.
     var onExpand: () -> Void
-
+    
     /// Drag ke bawah melewati midpoint saat expanded -> parent pindah ke collapsed.
     var onCollapse: () -> Void
-
+    
     /// Baris origin di-tap -> parent buka lagi search sheet untuk ganti titik awal.
     var onEditOrigin: () -> Void
-
+    
     /// Baris destination di-tap -> parent buka lagi search sheet untuk ganti tujuan.
     var onEditDestination: () -> Void
-
+    
     var onStart: (RouteOption) -> Void
-
+    
     @GestureState private var dragState: CGFloat = 0
-
+    
     private var baseHeight: CGFloat { isExpanded ? expandedHeight : collapsedHeight }
-
+    
     private var liveHeight: CGFloat {
         min(max(baseHeight - dragState, collapsedHeight), expandedHeight)
     }
-
+    
     private var recommendedOption: RouteOption? {
         options.first(where: { $0.isRecommended })
     }
-
+    
     private var chosenOption: RouteOption? {
         options.first(where: { $0.kind == selectedKind })
     }
-
+    
     var body: some View {
         VStack(spacing: 0) {
             // Grabber + header — tetap ada secara visual sebagai penanda area drag,
@@ -67,7 +67,7 @@ struct DirectionsSheet: View {
                     .frame(width: 36, height: 5)
                     .padding(.top, 8)
                     .padding(.bottom, 16)
-
+                
                 HStack {
                     Text("Directions")
                         .font(.system(size: 28, weight: .bold))
@@ -84,7 +84,7 @@ struct DirectionsSheet: View {
                 .padding(.horizontal, 20)
                 .padding(.bottom, 20)
             }
-
+            
             LocationInputStack(
                 originTitle: originTitle,
                 destinationTitle: destinationTitle,
@@ -96,14 +96,14 @@ struct DirectionsSheet: View {
             )
             .padding(.horizontal, 18)
             .padding(.bottom, 1)
-
+            
             if showLegend {
                 RouteLegendView()
                     .padding(.horizontal, 20)
                     .padding(.top, 20)
                     .padding(.bottom, 20)
             }
-
+            
             routeOptionsSection
         }
         .frame(height: liveHeight, alignment: .top)
@@ -116,7 +116,7 @@ struct DirectionsSheet: View {
         // juga tetap jalan.
         .simultaneousGesture(dragGesture)
     }
-
+    
     private var dragGesture: some Gesture {
         DragGesture(minimumDistance: 4, coordinateSpace: .local)
             .updating($dragState) { value, state, _ in
@@ -127,7 +127,7 @@ struct DirectionsSheet: View {
             .onEnded { value in
                 let translation = value.translation.height
                 let threshold: CGFloat = 60 // jarak menarik minimum biar dianggap sengaja
-
+                
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.9)) {
                     if translation < -threshold {
                         if !isExpanded { onExpand() }
@@ -141,7 +141,7 @@ struct DirectionsSheet: View {
                 }
             }
     }
-
+    
     /// Opsi berikutnya (selain yang sedang dipilih) — dipakai untuk "mengintip"
     /// sedikit di bawah kartu utama saat collapsed, sebagai penanda visual bahwa
     /// masih ada opsi lain kalau panel di-swipe up.
@@ -149,7 +149,7 @@ struct DirectionsSheet: View {
         let primary = chosenOption ?? recommendedOption
         return options.first(where: { $0.id != primary?.id })
     }
-
+    
     @ViewBuilder
     private var routeOptionsSection: some View {
         if isExpanded {
@@ -175,7 +175,7 @@ struct DirectionsSheet: View {
                     onSelect: { onSelectOption(chosen) },
                     onStart: { onStart(chosen) }
                 )
-
+                
                 // Sengaja dibiarkan "kepotong" oleh .clipped() di collapsedHeight —
                 // cuma bagian atasnya yang keintip, jadi user sadar ada opsi lain
                 // di bawah kalau panel ditarik ke atas.
@@ -203,7 +203,7 @@ struct RouteOptionsCard: View {
     var isSelected: Bool = false
     var onSelect: () -> Void = {}
     var onStart: () -> Void
-
+    
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
@@ -213,24 +213,24 @@ struct RouteOptionsCard: View {
                             .font(.subheadline)
                             .foregroundStyle(.primary)
                     }
-                    Text(option.title)
+                    Text(option.kind == "fastest" ? "Standard" : option.title)
                         .font(.system(size: 17, weight: .bold))
                         .foregroundStyle(.primary)
                 }
-
+                
                 Text(option.subtitle)
                     .font(.system(size: 14))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-
+                
                 Text(option.durationText)
                     .font(.system(size: 14))
                     .foregroundStyle(.secondary)
                     .padding(.top, 2)
             }
-
+            
             Spacer(minLength: 8)
-
+            
             StartButton(action: onStart)
         }
         .padding(16)
@@ -248,7 +248,7 @@ struct RouteOptionsCard: View {
 /// Tombol "Start" di dalam RouteOptionsCard.
 private struct StartButton: View {
     var action: () -> Void
-
+    
     var body: some View {
         Button(action: action) {
             HStack(spacing: 4) {
