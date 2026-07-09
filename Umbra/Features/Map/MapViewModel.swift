@@ -167,7 +167,7 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
     
     override init() {
         super.init()
-        InitSearchCompleter()
+        initSearchCompleter()
         loadRouteGraph()
     }
     
@@ -290,12 +290,12 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
         }
     }
     
-    func InitSearchCompleter() {
+    func initSearchCompleter() {
         completer.delegate = self
         completer.resultTypes = [.address, .pointOfInterest]
     }
     
-    func SearchLocation(query: String) {
+    func searchLocation(query: String) {
         searchDebounceTask?.cancel()
         
         distanceCache.removeAll()
@@ -320,11 +320,11 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
         results = []
     }
     
-    func RequestUserLocation() {
-        locationManager.RequestUserLocation()
+    func requestUserLocation() {
+        locationManager.requestUserLocation()
     }
     
-    func GetCurrentWeather(for location: CLLocation) async {
+    func getCurrentWeather(for location: CLLocation) async {
         do {
             let weather = try await weatherService.weather(for: location)
             let current = weather.currentWeather

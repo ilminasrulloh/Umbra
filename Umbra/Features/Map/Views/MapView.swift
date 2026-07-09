@@ -63,7 +63,7 @@ struct MapView: View {
         let value = heading.trueHeading >= 0 ? heading.trueHeading : heading.magneticHeading
         return value
     }
-
+    
     /// Tombol untuk mengembalikan kamera peta ke lokasi user saat ini.
     private var recenterButton: some View {
         Button {
@@ -108,7 +108,7 @@ struct MapView: View {
                         if let coordinate = viewModel.midpointCoordinate(for: option.kind) {
                             Annotation("", coordinate: coordinate) {
                                 RouteCalloutBubble(option: option, isSelected: option.kind == selectedRouteKind)
-                                    // UBAH NILAI 0.4 MENJADI 0.75 ATAU 0.8 DI SINI
+                                // UBAH NILAI 0.4 MENJADI 0.75 ATAU 0.8 DI SINI
                                     .scaleEffect(max(0.75, min(1.0, 3000 / cameraDistance)))
                                     .animation(.interactiveSpring, value: cameraDistance)
                                     .onTapGesture {
@@ -127,12 +127,12 @@ struct MapView: View {
                     cameraDistance = context.camera.distance
                 }
                 .onAppear {
-                    viewModel.RequestUserLocation()
+                    viewModel.requestUserLocation()
                 }
-                .onChange(of: viewModel.locationManager.userLocation) { oldValue, newLocation in
+                .onChange(of: viewModel.locationManager.userLocation) {_, newLocation in
                     if let location = newLocation, viewModel.pingWeatherManager {
                         Task {
-                            await viewModel.GetCurrentWeather(for: location)
+                            await viewModel.getCurrentWeather(for: location)
                         }
                     }
                 }
@@ -171,13 +171,13 @@ struct MapView: View {
                     .presentationBackgroundInteraction(.enabled)
                 }
                 .overlay(alignment: .topLeading) {
-                    weatherAndUVIndexView(
+                    WeatherAndUVIndexView(
                         viewModel: viewModel,
                         expandUVIndexButton: $expandUVIndexButton,
                         expandWeatherButton: $expandWeatherButton
                     )
                 }
-
+                
                 // Recenter button — sengaja jadi child ZStack biasa (BUKAN .overlay()),
                 // dan dideklarasikan SEBELUM blok DirectionsSheet di bawah. Di ZStack,
                 // child yang belakangan digambar di ATAS child yang duluan — jadi begitu
@@ -192,12 +192,12 @@ struct MapView: View {
                             .padding(
                                 .bottom,
                                 directionsSheetState != .hidden
-                                    ? collapsedSheetHeight + 16
-                                    : geo.size.height * 0.1 + 16
+                                ? collapsedSheetHeight + 16
+                                : geo.size.height * 0.1 + 16
                             )
                     }
                 }
-
+                
                 if directionsSheetState != .hidden {
                     VStack {
                         Spacer()
@@ -324,263 +324,6 @@ struct MapView: View {
     }
 }
 
-struct BottomPanelSheetView: View {
-    @Bindable var viewModel: MapViewModel
-    @Binding var currentPresentationDetents: PresentationDetent
-    var focusedField: FocusState<Field?>.Binding
-    var editingField: Field
-    var onSeeRoutes: (NavigationDestination) -> Void
-    
-    var isExtended: Bool { currentPresentationDetents == .large }
-    
-    private var activeSearchText: Binding<String> {
-        editingField == .origin ? $viewModel.userOriginText : $viewModel.userDestinationText
-    }
-    
-    private var searchPlaceholder: String {
-        editingField == .origin ? "Search Origin" : "Search Destination"
-    }
-    
-    var body: some View {
-        VStack(alignment: .leading) {
-            HStack {
-                HStack {
-                    Image(systemName: "magnifyingglass")
-                    TextField(searchPlaceholder, text: activeSearchText)
-                        .disabled(!isExtended)
-                        .focused(focusedField, equals: editingField)
-                        .onChange(of: activeSearchText.wrappedValue) { newQuery in
-                            if viewModel.showDestination {
-                                viewModel.SearchLocation(query: newQuery)
-                            }
-                        }
-                        .overlay {
-                            if !isExtended {
-                                Color.clear
-                                    .contentShape(Rectangle())
-                                    .onTapGesture {
-                                        withAnimation {
-                                            currentPresentationDetents = .large
-                                        } completion: {
-                                            focusedField.wrappedValue = editingField
-                                        }
-                                    }
-                            }
-                        }
-                    
-                    if isExtended && !activeSearchText.wrappedValue.isEmpty {
-                        Button(action: {
-                            activeSearchText.wrappedValue = ""
-                        }) {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.gray)
-                        }
-                    }
-                }
-                .padding(.vertical, 10)
-                .padding(.horizontal, 20)
-                .frame(maxWidth: isExtended ? .infinity : 350)
-                .background(Color(.tertiarySystemFill))
-                .cornerRadius(30)
-                
-                if isExtended {
-                    Button(action: {
-                        focusedField.wrappedValue = nil
-                        currentPresentationDetents = .fraction(0.1)
-                    }) {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.largeTitle)
-                            .fontWeight(.light)
-                            .symbolRenderingMode(.palette)
-                            .foregroundStyle(.primary, Color(.systemGray4))
-                    }
-                }
-            }
-            .padding(isExtended ? 20 : 0)
-            
-            if isExtended {
-                if activeSearchText.wrappedValue.isEmpty {
-                    Text("")
-                        .fontWeight(.medium)
-                        .padding(.leading, 20)
-                    
-                    Spacer()
-                } else {
-                    ScrollView {
-                        VStack(spacing: 0) {
-                            ForEach(viewModel.results, id: \.stableID) { result in
-                                LocationSuggestionView(
-                                    viewModel: viewModel,
-                                    result: result,
-                                    onSeeRoutes: onSeeRoutes
-                                )
-                            }
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
-        }
-    }
-}
-
-struct LocationSuggestionView: View {
-    @Bindable var viewModel: MapViewModel
-    @State private var distanceText: String = ""
-    var result: MKLocalSearchCompletion
-    var onSeeRoutes: (NavigationDestination) -> Void
-    
-    var body: some View {
-        Button {
-            selectDestination()
-        } label: {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 2) {
-                    Circle()
-                        .fill(Color(.systemGray4))
-                        .frame(width: 40, height: 40)
-                        .overlay(
-                            Image(systemName: "building.2.fill")
-                                .foregroundStyle(Color(.white))
-                                .font(.system(size: 14))
-                        )
-                        .padding(.trailing, 20)
-                    
-                    VStack(alignment: .leading) {
-                        Text(result.title)
-                            .foregroundStyle(.primary)
-                        Text(result.subtitle)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                            .foregroundStyle(Color(.systemGray2))
-                            .font(.subheadline)
-                    }
-                }
-                
-                if viewModel.results.first == result {
-                    Button {
-                        selectDestination()
-                    } label: {
-                        Text("See Routes")
-                            .font(.footnote)
-                            .fontWeight(.medium)
-                            .foregroundStyle(Color(.white))
-                            .padding(8)
-                            .frame(maxWidth: .infinity)
-                            .background(Color(.blue))
-                            .cornerRadius(25)
-                    }
-                    .padding(.top, 8)
-                    .padding(.bottom, 4)
-                }
-                
-                Divider()
-                    .padding(.top, 10)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.top, 10)
-            .padding(.horizontal, 20)
-            .background(Color(.systemGray6))
-        }
-        .cornerRadius(20)
-        .padding(.bottom, viewModel.results.first == result ? 8 : 4)
-        .padding(.horizontal, 30)
-    }
-    
-    private func selectDestination() {
-        Task {
-            if let destination = await viewModel.resolveDestination(for: result) {
-                onSeeRoutes(destination)
-            }
-        }
-    }
-}
-
-struct weatherAndUVIndexView: View {
-    @Bindable var viewModel: MapViewModel
-    @Binding var expandUVIndexButton: Bool
-    @Binding var expandWeatherButton: Bool
-    
-    var body: some View {
-        HStack(alignment: .top) {
-            Button(action: { expandWeatherButton.toggle() }) {
-                if expandWeatherButton {
-                    VStack(alignment: .leading) {
-                        HStack {
-                            Image(systemName: viewModel.weatherSymbolName)
-                                .padding(.trailing, 5)
-                            Text(viewModel.temperature)
-                        }
-                        Text(viewModel.feelsLike)
-                            .padding(.top, 2)
-                    }
-                    .fontWeight(.medium)
-                    .padding(.vertical, 15)
-                    .padding(.leading, 20)
-                    .padding(.trailing, 30)
-                    .background(.ultraThickMaterial)
-                    .cornerRadius(20)
-                    .padding(.leading, 20)
-                    .padding(.trailing, 10)
-                    
-                } else {
-                    HStack {
-                        Image(systemName: viewModel.weatherSymbolName)
-                            .padding(.trailing, 5)
-                        Text(viewModel.temperature)
-                    }
-                    .fontWeight(.medium)
-                    .padding(.vertical, 15)
-                    .padding(.horizontal, 20)
-                    .background(.ultraThickMaterial)
-                    .cornerRadius(25)
-                    .padding(.leading, 20)
-                    .padding(.trailing, 10)
-                }
-            }
-            
-            Button(action: { expandUVIndexButton.toggle() }) {
-                if expandUVIndexButton {
-                    VStack(alignment: .leading) {
-                        HStack {
-                            Image(systemName: "sun.min")
-                                .padding(.trailing, 5)
-                            Text("\(viewModel.uvIndex)")
-                        }
-                        Text(viewModel.uvCategory)
-                            .font(.caption)
-                            .foregroundStyle(.primary)
-                        Text("Use Sunscreen")
-                            .font(.body)
-                            .foregroundStyle(.primary)
-                    }
-                    .fontWeight(.medium)
-                    .padding(.vertical, 15)
-                    .padding(.leading, 20)
-                    .padding(.trailing, 30)
-                    .background(.ultraThickMaterial)
-                    .cornerRadius(20)
-                    .padding(.leading, 10)
-                    
-                } else {
-                    HStack {
-                        Image(systemName: "sun.min")
-                            .padding(.trailing, 5)
-                        Text("\(viewModel.uvIndex)")
-                    }
-                    .fontWeight(.medium)
-                    .padding(.vertical, 15)
-                    .padding(.horizontal, 20)
-                    .background(.ultraThickMaterial)
-                    .cornerRadius(25)
-                    .padding(.leading, 10)
-                }
-            }
-        }
-        .foregroundStyle(.primary)
-        .padding(.top, 55)
-    }
-}
 
 private struct RouteCalloutBubble: View {
     let option: RouteOption
