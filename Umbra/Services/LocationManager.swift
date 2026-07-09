@@ -30,7 +30,7 @@ class LocationManager: NSObject, CLLocationManagerDelegate {
         manager.headingFilter = 1 // update tiap kompas berubah minimal 1°, kurangi noise sensor
     }
     
-    func RequestUserLocation(){
+    func requestUserLocation(){
         guard CLLocationManager.locationServicesEnabled() else {
             lastErrorMessage = "Location Services mati di level sistem. Aktifkan di Settings > Privacy & Security > Location Services."
             return
