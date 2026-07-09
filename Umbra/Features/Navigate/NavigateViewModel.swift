@@ -15,6 +15,9 @@ struct NavigationStep: Identifiable {
     let id = UUID()
     let instructions: String
     let distance: CLLocationDistance
+    /// Titik koordinat maneuver ini — dipakai untuk memindahkan kamera saat
+    /// carousel instruksi digeser ke step ini (lihat `NavigateViewModel.previewStep`).
+    let coordinate: CLLocationCoordinate2D
 }
 
 struct RouteNode: Codable {
@@ -297,7 +300,11 @@ final class NavigateViewModel: NSObject {
         var previousDistance: CLLocationDistance = 0
         for maneuver in maneuvers {
             let segmentLength = max(maneuver.distanceFromStart - previousDistance, 0)
-            result.append(NavigationStep(instructions: maneuver.instruction, distance: segmentLength))
+            result.append(NavigationStep(
+                instructions: maneuver.instruction,
+                distance: segmentLength,
+                coordinate: maneuver.coordinate
+            ))
             previousDistance = maneuver.distanceFromStart
         }
         return result
@@ -400,6 +407,28 @@ final class NavigateViewModel: NSObject {
         followResumeTask?.cancel()
         followResumeTask = nil
         isFollowingUser = true
+    }
+
+    /// Panggil ini saat carousel instruksi digeser ke step yang BUKAN step aktif —
+    /// kamera berhenti mengikuti GPS user dan pindah (langsung, tanpa interpolasi,
+    /// sama seperti `recenterCamera`) ke titik maneuver step tsb, supaya user bisa
+    /// "intip" lokasi belokan yang ditunjukkan card. Top-down (pitch 0, heading utara)
+    /// dipakai supaya tampilannya jelas beda dari POV navigasi normal.
+    ///
+    /// Begitu carousel kembali ke step yang sedang aktif, panggil `resumeFollowingCamera()`
+    /// (bukan fungsi ini) supaya kamera kembali mengikuti posisi user secara live.
+    func previewStep(at coordinate: CLLocationCoordinate2D) {
+        followResumeTask?.cancel()
+        followResumeTask = nil
+        isFollowingUser = false
+        camera = .camera(
+            MapCamera(
+                centerCoordinate: coordinate,
+                distance: 400,
+                heading: 0,
+                pitch: 0
+            )
+        )
     }
     
     /// Dipanggil setiap ada data baru dari GPS/kompas. Ini TIDAK langsung menggerakkan kamera —

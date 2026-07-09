@@ -100,6 +100,9 @@ struct NavigateView: View {
         .onChange(of: viewModel.currentStepIndex) { _, newValue in
             selectedStepIndex = newValue
         }
+        .onChange(of: selectedStepIndex) { _, newIndex in
+            handleCarouselStepChange(newIndex)
+        }
         .onChange(of: locationManager.userLocation) { _, _ in
             attemptAutoStartNavigation()
         }
@@ -199,6 +202,26 @@ struct NavigateView: View {
     }
     
     
+    // MARK: - Carousel <-> Map sync
+
+    /// Dipanggil tiap `selectedStepIndex` berubah — baik karena user menggeser
+    /// `InstructionCarouselCard` secara manual, MAUPUN karena `currentStepIndex`
+    /// (progress GPS) menyamakannya balik lewat onChange di atas. Kalau step yang
+    /// ditampilkan carousel bukan step yang sedang aktif, kamera "meninjau" lokasi
+    /// step tsb. Begitu carousel kembali ke step aktif, kamera kembali mengikuti
+    /// posisi user secara live.
+    private func handleCarouselStepChange(_ index: Int) {
+        guard viewModel.isNavigating else { return }
+        let steps = viewModel.activeSteps
+        guard steps.indices.contains(index) else { return }
+
+        if index == viewModel.currentStepIndex {
+            viewModel.resumeFollowingCamera()
+        } else {
+            viewModel.previewStep(at: steps[index].coordinate)
+        }
+    }
+
     // MARK: - Auto-start navigasi
     
     /// Coba mulai navigasi begitu lokasi user tersedia — menggantikan tombol
