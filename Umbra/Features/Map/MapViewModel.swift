@@ -268,6 +268,7 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
             return
         }
         
+        
         let originLocation = CLLocation(latitude: origin.latitude, longitude: origin.longitude)
         let destLocation = CLLocation(latitude: destination.latitude, longitude: destination.longitude)
         let distanceOriginAndDest = originLocation.distance(from: destLocation)
@@ -291,6 +292,20 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
             return
         }
         
+        let startNodeLocation = CLLocation(latitude: sNode.coordinate.latitude, longitude: sNode.coordinate.longitude)
+            let endNodeLocation = CLLocation(latitude: eNode.coordinate.latitude, longitude: eNode.coordinate.longitude)
+            
+            let distanceFromOriginToGraph = originLocation.distance(from: startNodeLocation)
+            let distanceFromDestToGraph = destLocation.distance(from: endNodeLocation)
+            
+            // to ga ngaco ke SCBD
+            let maximumGraphSnapDistance: CLLocationDistance = 3000 // Sesuaikan jarak toleransi dalam meter
+            
+            guard distanceFromOriginToGraph <= maximumGraphSnapDistance,
+                  distanceFromDestToGraph <= maximumGraphSnapDistance else {
+                await legacyAppleMapsRoute(from: origin, to: destination)
+                return
+            }
         async let lead = nativeWalkingLeg(from: origin, to: sNode.coordinate)
         async let trail = nativeWalkingLeg(from: eNode.coordinate, to: destination)
         let (leadLeg, trailLeg) = await (lead, trail)
