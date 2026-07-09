@@ -1,5 +1,5 @@
 //
-//  WeatherAndUVIndex.swift
+//  WeatherAndUVIndexView.swift
 //  Umbra
 //
 //  Created by Caroline Ang on 09/07/26.

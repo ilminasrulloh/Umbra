@@ -104,9 +104,9 @@ struct MapView: View {
                             .tint(.green)
                     }
                     
-                    ForEach(viewModel.routeOptions, id: \.kind) { option in
+                    ForEach(orderedRouteOptions, id: \.kind) { option in
                         if let coordinate = viewModel.midpointCoordinate(for: option.kind) {
-                            Annotation("", coordinate: coordinate) {
+                            Annotation("", coordinate: coordinate, anchor: .top) {
                                 RouteCalloutBubble(option: option, isSelected: option.kind == selectedRouteKind)
                                 // UBAH NILAI 0.4 MENJADI 0.75 ATAU 0.8 DI SINI
                                     .scaleEffect(max(0.75, min(1.0, 3000 / cameraDistance)))
@@ -117,6 +117,7 @@ struct MapView: View {
                                         }
                                     }
                             }
+                            
                             .annotationTitles(.hidden)
                         }
                     }
@@ -260,6 +261,8 @@ struct MapView: View {
                                     currentPresentationDetents = .large
                                 }
                                 clickedTextField = .destination
+                                selectedRouteKind = "shaded"
+                                viewModel.results = []
                             },
                             onStart: { option in
                                 selectedRouteKind = option.kind
@@ -305,21 +308,24 @@ struct MapView: View {
     private var routeOverlay: some MapContent {
         if let route = viewModel.calculatedRoutes.first {
             MapPolyline(route.polyline)
-                .stroke(
-                    selectedRouteKind == "fastest" ? .yellow : .yellow.opacity(0.3),
-                    lineWidth: selectedRouteKind == "fastest" ? 6 : 3)
+                .stroke(.yellow,
+                        lineWidth: selectedRouteKind == "fastest" ? 6 : 2)
         }
         
         if let route = viewModel.shadedRoute, !route.coordinates.isEmpty {
             ForEach(route.segments) { segment in
                 
                 let polyline = MapPolyline(coordinates: segment.coordinate)
+                let strokeWidth: CGFloat = selectedRouteKind == "shaded" ? 6 : 2
                 
-                let strokeColor = selectedRouteKind == "shaded" ? segment.color : segment.color.opacity(0.3)
-                let strokeWidth: CGFloat = selectedRouteKind == "shaded" ? 6 : 3
-                
-                polyline.stroke(strokeColor, lineWidth: strokeWidth)
+                polyline.stroke(segment.color, lineWidth: strokeWidth)
             }
+        }
+    }
+    
+    private var orderedRouteOptions: [RouteOption] {
+        viewModel.routeOptions.sorted { lhs, rhs in
+            (lhs.kind == selectedRouteKind ? 1 : 0) < (rhs.kind == selectedRouteKind ? 1 : 0)
         }
     }
 }
@@ -332,23 +338,25 @@ private struct RouteCalloutBubble: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "chart.bar.fill")
-                .font(.system(size: 6))
+                .font(.footnote)
             VStack(alignment: .leading, spacing: 2) {
                 Text(option.title)
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.body)
+                    .fontWeight(.bold)
                 Text(option.subtitle)
-                    .font(.system(size: 8))
+                    .font(.footnote)
                     .opacity(0.85)
             }
             Spacer()
         }
-        .frame(width: 100)
+        .frame(width: 150)
         .foregroundStyle(.white)
         .padding(14)
         .background(isSelected ? Color.accentColor : Color(.systemGray))
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .shadow(color: .black.opacity(isSelected ? 0.2 : 0.08), radius: isSelected ? 8 : 3)
-        .scaleEffect(isSelected ? 1.0 : 0.92)
+        .scaleEffect(isSelected ? 1.0 : 0.75 )
+        .zIndex(isSelected ? 5 : 1)
     }
 }
 

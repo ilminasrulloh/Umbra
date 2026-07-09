@@ -94,8 +94,10 @@ actor SearchGate {
 @Observable
 class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
     var locationManager = LocationManager()
+    var routeManager = RouteManager()
     
     var results: [MKLocalSearchCompletion] = []
+    var nearbyResults: [MKMapItem] = []
     var temperature: String = "27°"
     var uvIndex: Int = 4
     var weatherSymbolName: String = "cloud.sun"
@@ -160,9 +162,10 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
     private let snapThresholdMeters: CLLocationDistance = 20
     
     private var searchDebounceTask: Task<Void, Never>?
-    private var distanceCache: [String: String] = [:]
     private var distanceResolutionTask: Task<Void, Never>?
-
+    private var sortTask: Task<Void, Never>?
+    private var distanceCache: [String: String] = [:]
+    
     private let searchGate = SearchGate()
     
     override init() {
@@ -264,6 +267,16 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
             shadedRoute = nil
             return
         }
+        
+        let originLocation = CLLocation(latitude: origin.latitude, longitude: origin.longitude)
+        let destLocation = CLLocation(latitude: destination.latitude, longitude: destination.longitude)
+        let distanceOriginAndDest = originLocation.distance(from: destLocation)
+        
+        guard distanceOriginAndDest <= 10000 else {
+            await legacyAppleMapsRoute(from: origin, to: destination)
+            return
+        }
+        
         guard let graph = routeGraph, let planner = routePlanner else {
             await legacyAppleMapsRoute(from: origin, to: destination)
             return
@@ -312,12 +325,71 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
         }
     }
     
+
     func completerDidUpdateResults(_ completer: MKLocalSearchCompleter) {
         results = completer.results
+        sortTask?.cancel()
+        sortTask = Task {
+            await sortResultsToNearest()
+        }
     }
     
     func completer(_ completer: MKLocalSearchCompleter, didFailWithError error: Error) {
         results = []
+    }
+    
+//    func getNearbyPlaces() async {
+//        guard let userLocation = locationManager.userLocation else { return }
+//        
+//        let request = MKLocalSearch.Request()
+//        request.region = MKCoordinateRegion(center: userLocation.coordinate,
+//                                            latitudinalMeters: 100,
+//                                            longitudinalMeters: 100)
+//        request.pointOfInterestFilter = .includingAll
+//        
+//        do {
+//            let response = try await MKLocalSearch(request: request).start()
+//            nearbyResults = response.mapItems
+//        } catch {
+//            
+//        }
+//    }
+
+    func sortResultsToNearest() async {
+        guard let userLocation = locationManager.userLocation else { return }
+        let snapshot = results
+        
+        let resultAndDistance: [(completion: MKLocalSearchCompletion, distance: CLLocationDistance)] = await withTaskGroup(of: (MKLocalSearchCompletion, CLLocationDistance)?.self) { group in
+            for completion in snapshot {
+                group.addTask {
+                    guard !Task.isCancelled else { return nil }
+                    return await self.searchGate.executeBackground {
+                        guard !Task.isCancelled else { return nil }
+                        let request = MKLocalSearch.Request(completion: completion)
+                        do {
+                            let response = try await MKLocalSearch(request: request).start()
+                            guard !Task.isCancelled else { return nil }
+                            guard let coordinate = response.mapItems.first?.placemark.coordinate else { return nil }
+                            let location = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+                            return (completion, userLocation.distance(from: location))
+                        } catch {
+                            return nil
+                        }
+                    } ?? nil
+                }
+            }
+            var collected: [(MKLocalSearchCompletion, CLLocationDistance)] = []
+            for await result in group {
+                if let result { collected.append(result) }
+            }
+            return collected
+        }
+        
+        guard !Task.isCancelled else { return }
+        
+        self.results = resultAndDistance
+            .sorted { $0.distance < $1.distance }
+            .map { $0.completion }
     }
     
     func requestUserLocation() {
@@ -455,4 +527,14 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
 
 extension MKLocalSearchCompletion {
     var stableID: String { "\(title)|\(subtitle)" }
+}
+
+extension MKMapItem {
+    var stableID: String { "\(name)" }
+    
+    static func == (lhs: MKMapItem, rhs: MKMapItem) -> Bool {
+        lhs.placemark.coordinate.latitude == rhs.placemark.coordinate.latitude &&
+        lhs.placemark.coordinate.longitude == rhs.placemark.coordinate.longitude &&
+        lhs.name == rhs.name
+    }
 }

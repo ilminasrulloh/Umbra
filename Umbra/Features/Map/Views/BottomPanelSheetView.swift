@@ -1,5 +1,5 @@
 //
-//  RouteView.swift
+//  BottomPanelSheetView.swift
 //  Umbra
 //
 //  Created by Caroline Ang on 09/07/26.
@@ -88,6 +88,14 @@ struct BottomPanelSheetView: View {
                         .padding(.leading, 20)
                     
                     Spacer()
+                    
+//                    ForEach(viewModel.nearbyResults.prefix(3), id: \.stableID) { result in
+//                        NearbyLocationView(
+//                            viewModel: viewModel,
+//                            result: result,
+//                            onSeeRoutes: onSeeRoutes
+//                        )
+//                    }
                 } else {
                     ScrollView {
                         VStack(spacing: 0) {
