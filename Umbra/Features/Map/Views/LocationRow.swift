@@ -1,5 +1,5 @@
 //
-//  LocationRowView.swift
+//  LocationRow.swift
 //  Umbra
 //
 //  Created by Caroline Ang on 09/07/26.
