@@ -20,6 +20,9 @@ struct NavigateView: View {
     @State private var selectedStepIndex: Int = 0
     @State private var hasAutoStarted = false
     
+    @State private var showDetailsSheet = false
+    @State private var startAddressText: String = "My Location"
+    @State private var destinationAddressText: String = ""
     /// Tujuan yang dikirim dari MapView (hasil pencarian user)
     let initialDestination: CLLocationCoordinate2D
     let destinationTitle: String
@@ -29,7 +32,7 @@ struct NavigateView: View {
     /// ATAU swipe-down — keduanya sama-sama memicu `.sheet(onDismiss:)` di bawah,
     /// yang menutup NavigateView dan kembali ke MapView.
     @State private var showArrivalSheet = false
-
+    
     /// Dipanggil sesaat sebelum NavigateView menutup diri (baik lewat tap checkmark
     /// maupun swipe-down di ArrivalSummarySheet). MapView bisa pakai closure ini untuk
     /// membersihkan tampilan rute yang sempat digambar sebelumnya (destinasi terpilih,
@@ -81,6 +84,10 @@ struct NavigateView: View {
                             viewModel.stopNavigation()
                             selectedDestination = nil
                             dismiss()
+                        },
+                        onShowDetails: {
+                            loadAddressesIfNeeded()
+                            showDetailsSheet = true
                         }
                     )
                 } else {
@@ -157,6 +164,16 @@ struct NavigateView: View {
             .presentationDetents([.height(340)])
             .presentationDragIndicator(.visible)
         }
+        .sheet(isPresented: $showDetailsSheet) {
+            RouteDetailsSheet(
+                startAddress: startAddressText,
+                destinationAddress: destinationAddressText.isEmpty ? destinationTitle : destinationAddressText,
+                steps: viewModel.activeSteps,
+                onDismiss: { showDetailsSheet = false }
+            )
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+        }
     }
     var navigateMapView: some View {
         MapReader { proxy in
@@ -203,7 +220,7 @@ struct NavigateView: View {
     
     
     // MARK: - Carousel <-> Map sync
-
+    
     /// Dipanggil tiap `selectedStepIndex` berubah — baik karena user menggeser
     /// `InstructionCarouselCard` secara manual, MAUPUN karena `currentStepIndex`
     /// (progress GPS) menyamakannya balik lewat onChange di atas. Kalau step yang
@@ -214,14 +231,14 @@ struct NavigateView: View {
         guard viewModel.isNavigating else { return }
         let steps = viewModel.activeSteps
         guard steps.indices.contains(index) else { return }
-
+        
         if index == viewModel.currentStepIndex {
             viewModel.resumeFollowingCamera()
         } else {
             viewModel.previewStep(at: steps[index].coordinate)
         }
     }
-
+    
     // MARK: - Auto-start navigasi
     
     /// Coba mulai navigasi begitu lokasi user tersedia — menggantikan tombol
@@ -388,6 +405,64 @@ struct NavigateView: View {
             .multilineTextAlignment(.center)
             .padding(.horizontal)
     }
+
+    /// Hanya jalan sekali per sesi navigasi — kalau alamat tujuan sudah pernah
+    /// berhasil di-resolve, tidak perlu geocode ulang tiap kali "Details" ditekan.
+    private func loadAddressesIfNeeded() {
+        guard destinationAddressText.isEmpty else { return }
+        Task {
+            if let userLocation = locationManager.userLocation {
+                startAddressText = await reverseGeocodeAddress(for: userLocation) ?? "My Location"
+            }
+            let destLocation = CLLocation(
+                latitude: currentDestination.latitude,
+                longitude: currentDestination.longitude
+            )
+            destinationAddressText = await reverseGeocodeAddress(for: destLocation) ?? destinationTitle
+        }
+    }
+
+    private func reverseGeocodeAddress(for location: CLLocation) async -> String? {
+        let geocoder = CLGeocoder()
+        do {
+            let placemarks = try await geocoder.reverseGeocodeLocation(location)
+            guard let placemark = placemarks.first else { return nil }
+            return formattedAddress(from: placemark)
+        } catch {
+            return nil
+        }
+    }
+
+    private func formattedAddress(from placemark: CLPlacemark) -> String {
+        var components: [String] = []
+
+        if let thoroughfare = placemark.thoroughfare {
+            var street = thoroughfare
+            if let subThoroughfare = placemark.subThoroughfare {
+                street += " No. \(subThoroughfare)"
+            }
+            components.append(street)
+        } else if let name = placemark.name {
+            components.append(name)
+        }
+
+        if let locality = placemark.locality {
+            components.append(locality)
+        }
+
+        var stateZip = ""
+        if let area = placemark.administrativeArea { stateZip += area }
+        if let zip = placemark.postalCode {
+            stateZip += stateZip.isEmpty ? zip : " \(zip)"
+        }
+        if !stateZip.isEmpty { components.append(stateZip) }
+
+        if let country = placemark.country {
+            components.append(country)
+        }
+
+        return components.joined(separator: ", ")
+    }
 }
 
 #Preview {
@@ -397,10 +472,4 @@ struct NavigateView: View {
         destinationTitle: "Monas"
     )
 }
-
-/// Bottom sheet yang muncul di atas NavigateView begitu user sampai tujuan.
-/// Ikon tujuan + judul di kiri, tombol checkmark di kanan, emoji besar di tengah,
-/// lalu kalimat ringkasan "menit terik matahari yang dihindari". Bisa ditutup lewat
-/// tap checkmark ATAU swipe-down — keduanya ditangani lewat `.sheet(onDismiss:)`
-/// di NavigateView.
 

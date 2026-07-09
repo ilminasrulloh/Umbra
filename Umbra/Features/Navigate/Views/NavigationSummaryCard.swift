@@ -12,14 +12,15 @@ struct NavigationSummaryCard: View {
     let arrivalTimeText: String
     let remainingDistanceText: String
     let onEndRoute: () -> Void
-
+    var onShowDetails: () -> Void
+    
     @State private var isExpanded = false
-
+    
     var body: some View {
         VStack(spacing: 0) {
             grabber
                 .onTapGesture { toggle() }
-
+            
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(etaMinutesText)
                     .font(.system(size: 30, weight: .bold))
@@ -30,7 +31,7 @@ struct NavigationSummaryCard: View {
             }
             .padding(.horizontal)
             .padding(.top, 4)
-
+            
             HStack {
                 Text("\(arrivalTimeText) • \(remainingDistanceText)")
                     .font(.subheadline)
@@ -39,8 +40,13 @@ struct NavigationSummaryCard: View {
             }
             .padding(.horizontal)
             .padding(.bottom, isExpanded ? 12 : 20)
-
+            
             if isExpanded {
+                
+                detailsButton
+                    .padding(.horizontal)
+                    .padding(.bottom, 12)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
                 Button(role: .destructive) {
                     onEndRoute()
                 } label: {
@@ -69,7 +75,25 @@ struct NavigationSummaryCard: View {
                 }
         )
     }
-
+    
+    private var detailsButton: some View {
+        Button(action: onShowDetails) {
+            HStack(spacing: 10) {
+                Image(systemName: "list.bullet")
+                    .font(.system(size: 15, weight: .semibold))
+                Text("Details")
+                    .font(.system(size: 16, weight: .semibold))
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(.primary)
+            .padding(.vertical, 12)
+            .padding(.horizontal, 16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+    
     private var grabber: some View {
         Capsule()
             .fill(Color.secondary.opacity(0.35))
@@ -78,11 +102,11 @@ struct NavigationSummaryCard: View {
             .frame(maxWidth: .infinity)
             .contentShape(Rectangle())
     }
-
+    
     private func toggle() {
         setExpanded(!isExpanded)
     }
-
+    
     private func setExpanded(_ expanded: Bool) {
         withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
             isExpanded = expanded
