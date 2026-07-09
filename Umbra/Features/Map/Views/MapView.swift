@@ -179,11 +179,6 @@ struct MapView: View {
                     )
                 }
                 
-                // Recenter button — sengaja jadi child ZStack biasa (BUKAN .overlay()),
-                // dan dideklarasikan SEBELUM blok DirectionsSheet di bawah. Di ZStack,
-                // child yang belakangan digambar di ATAS child yang duluan — jadi begitu
-                // DirectionsSheet muncul/di-drag naik dan tingginya melewati posisi
-                // tombol ini, DirectionsSheet otomatis menutupinya.
                 VStack {
                     Spacer()
                     HStack {
@@ -340,7 +335,7 @@ private struct RouteCalloutBubble: View {
             Image(systemName: "chart.bar.fill")
                 .font(.footnote)
             VStack(alignment: .leading, spacing: 2) {
-                Text(option.title)
+                Text(option.kind == "fastest" ? "Standard" : option.title)
                     .font(.body)
                     .fontWeight(.bold)
                 Text(option.subtitle)

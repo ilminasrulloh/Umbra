@@ -33,11 +33,13 @@ struct LocationSuggestionView: View {
                     VStack(alignment: .leading) {
                         Text(result.title)
                             .foregroundStyle(.primary)
+                            .multilineTextAlignment(.leading)
                         Text(result.subtitle)
                             .lineLimit(1)
                             .truncationMode(.tail)
                             .foregroundStyle(Color(.systemGray2))
                             .font(.subheadline)
+                            .multilineTextAlignment(.leading)
                     }
                 }
                 
