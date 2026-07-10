@@ -114,46 +114,47 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
     var showDestination = true
     
     var calculatedRoutes: [MKRoute] = []
-    var shadedRoute: RouteResult?
+    var shadedRoutes: [RouteResult] = []
     
     var routeOptions: [RouteOption] {
         var options: [RouteOption] = []
-        
-        let hasShaded = shadedRoute != nil && !(shadedRoute!.coordinates.isEmpty)
-        let shaded = shadedRoute
+
         let plain = calculatedRoutes.first
-        
-        let isSameRoute: Bool
-        if let shaded = shaded, let plain = plain {
+
+        // Buang shaded route yang sebenarnya sama aja sama rute standard Apple Maps.
+        let distinctShaded = shadedRoutes.filter { shaded in
+            guard let plain else { return true }
             let distanceDiff = abs(shaded.totalLength - plain.distance)
             let pointCountDiff = abs(shaded.coordinates.count - plain.polyline.pointCount)
-            
-            isSameRoute = distanceDiff < 5 && pointCountDiff < 2
-        } else {
-            isSameRoute = false
+            return !(distanceDiff < 5 && pointCountDiff < 2)
         }
-        
-        if let shaded = shadedRoute, !shaded.coordinates.isEmpty, !isSameRoute {
+
+        // Maks 3 rute total (termasuk standard) → maks 2 slot shaded.
+        let cappedShaded = Array(distinctShaded.prefix(2))
+
+        for (index, shaded) in cappedShaded.enumerated() where !shaded.coordinates.isEmpty {
             options.append(RouteOption(
-                kind: "shaded",
+                kind: index == 0 ? "shaded" : "shaded\(index + 1)",
                 shadePercent: shaded.shadePercent,
-                subtitle: shaded.shadePercent >= 40 ? "Recommended - stays mostly shaded" : "Some sunshine along the way",
-                minutes: max(Int(shaded.estimatedTime/60), 1),
+                subtitle: index == 0
+                    ? (shaded.shadePercent >= 40 ? "Recommended - stays mostly shaded" : "Some sunshine along the way")
+                    : "Alternative shaded route",
+                minutes: max(Int(shaded.estimatedTime / 60), 1),
                 meters: Int(shaded.totalLength),
-                isRecommended: true))
+                isRecommended: index == 0))
         }
-        
-        if let plain = calculatedRoutes.first  {
-            let isOnlyRoute = !hasShaded
+
+        if let plain {
+            let isOnlyRoute = cappedShaded.isEmpty
             options.append(RouteOption(
                 kind: "fastest",
                 shadePercent: 0,
                 subtitle: isOnlyRoute ? "Recommended - Apple Maps Route" : "Apple Maps Route",
-                minutes: max(Int(plain.expectedTravelTime/60), 1),
+                minutes: max(Int(plain.expectedTravelTime / 60), 1),
                 meters: Int(plain.distance),
                 isRecommended: isOnlyRoute))
         }
-        
+
         return options
     }
     
@@ -166,7 +167,16 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
     private var sortTask: Task<Void, Never>?
     private var distanceCache: [String: String] = [:]
     
+    private func shadedRouteIndex(for kind: String) -> Int? {
+        switch kind {
+        case "shaded": return 0
+        case "shaded2": return 1
+        default: return nil
+        }
+    }
+    
     private let searchGate = SearchGate()
+    
     
     override init() {
         super.init()
@@ -206,6 +216,61 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
             calculatedRoutes = response.routes
         } catch {
             calculatedRoutes = []
+        }
+    }
+    
+    @MainActor
+    func calculateShadedWalkingRoute(to destination: CLLocationCoordinate2D) async {
+        guard let origin = locationManager.userLocation?.coordinate else {
+            shadedRoutes = []
+            return
+        }
+
+        let originLocation = CLLocation(latitude: origin.latitude, longitude: origin.longitude)
+        let destLocation = CLLocation(latitude: destination.latitude, longitude: destination.longitude)
+        let distanceOriginAndDest = originLocation.distance(from: destLocation)
+
+        guard distanceOriginAndDest <= 10000 else {
+            await legacyAppleMapsRoute(from: origin, to: destination)
+            return
+        }
+
+        guard let graph = routeGraph, let planner = routePlanner else {
+            await legacyAppleMapsRoute(from: origin, to: destination)
+            return
+        }
+
+        let startSnap = graph.snap(to: origin)
+        let endSnap = graph.snap(to: destination)
+
+        guard case .snapped(let sNode, _) = startSnap,
+              case .snapped(let eNode, _) = endSnap else {
+            await legacyAppleMapsRoute(from: origin, to: destination)
+            return
+        }
+
+        let startNodeLocation = CLLocation(latitude: sNode.coordinate.latitude, longitude: sNode.coordinate.longitude)
+        let endNodeLocation = CLLocation(latitude: eNode.coordinate.latitude, longitude: eNode.coordinate.longitude)
+
+        let distanceFromOriginToGraph = originLocation.distance(from: startNodeLocation)
+        let distanceFromDestToGraph = destLocation.distance(from: endNodeLocation)
+
+        let maximumGraphSnapDistance: CLLocationDistance = 3000
+
+        guard distanceFromOriginToGraph <= maximumGraphSnapDistance,
+              distanceFromDestToGraph <= maximumGraphSnapDistance else {
+            await legacyAppleMapsRoute(from: origin, to: destination)
+            return
+        }
+        async let lead = nativeWalkingLeg(from: origin, to: sNode.coordinate)
+        async let trail = nativeWalkingLeg(from: eNode.coordinate, to: destination)
+        let (leadLeg, trailLeg) = await (lead, trail)
+
+        do {
+            let cores = try planner.shadiestRoutes(from: sNode.id, to: eNode.id, maxRoutes: 2)
+            shadedRoutes = cores.map { stitch(lead: leadLeg, core: $0, trail: trailLeg) }
+        } catch {
+            await legacyAppleMapsRoute(from: origin, to: destination)
         }
     }
     
@@ -258,63 +323,6 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
                     }
                 }
             }
-        }
-    }
-    
-    @MainActor
-    func calculateShadedWalkingRoute(to destination: CLLocationCoordinate2D) async {
-        guard let origin = locationManager.userLocation?.coordinate else {
-            shadedRoute = nil
-            return
-        }
-        
-        
-        let originLocation = CLLocation(latitude: origin.latitude, longitude: origin.longitude)
-        let destLocation = CLLocation(latitude: destination.latitude, longitude: destination.longitude)
-        let distanceOriginAndDest = originLocation.distance(from: destLocation)
-        
-        guard distanceOriginAndDest <= 10000 else {
-            await legacyAppleMapsRoute(from: origin, to: destination)
-            return
-        }
-        
-        guard let graph = routeGraph, let planner = routePlanner else {
-            await legacyAppleMapsRoute(from: origin, to: destination)
-            return
-        }
-        
-        let startSnap = graph.snap(to: origin)
-        let endSnap = graph.snap(to: destination)
-        
-        guard case .snapped(let sNode, _) = startSnap,
-              case .snapped(let eNode, _) = endSnap else {
-            await legacyAppleMapsRoute(from: origin, to: destination)
-            return
-        }
-        
-        let startNodeLocation = CLLocation(latitude: sNode.coordinate.latitude, longitude: sNode.coordinate.longitude)
-        let endNodeLocation = CLLocation(latitude: eNode.coordinate.latitude, longitude: eNode.coordinate.longitude)
-        
-        let distanceFromOriginToGraph = originLocation.distance(from: startNodeLocation)
-        let distanceFromDestToGraph = destLocation.distance(from: endNodeLocation)
-        
-        // agar ga ngaco ke SCBD
-        let maximumGraphSnapDistance: CLLocationDistance = 3000 // Sesuaikan jarak toleransi dalam meter
-        
-        guard distanceFromOriginToGraph <= maximumGraphSnapDistance,
-              distanceFromDestToGraph <= maximumGraphSnapDistance else {
-            await legacyAppleMapsRoute(from: origin, to: destination)
-            return
-        }
-        async let lead = nativeWalkingLeg(from: origin, to: sNode.coordinate)
-        async let trail = nativeWalkingLeg(from: eNode.coordinate, to: destination)
-        let (leadLeg, trailLeg) = await (lead, trail)
-        
-        do {
-            let core = try planner.shadiestRoute(from: sNode.id, to: eNode.id)
-            shadedRoute = stitch(lead: leadLeg, core: core, trail: trailLeg)
-        } catch {
-            await legacyAppleMapsRoute(from: origin, to: destination)
         }
     }
     
@@ -455,10 +463,12 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
             guard let coords = calculatedRoutes.first?.polyline.coordinates, !coords.isEmpty else { return nil }
             return coords[coords.count / 2]
         default:
-            guard let coords = shadedRoute?.coordinates, !coords.isEmpty else { return nil }
+            guard let index = shadedRouteIndex(for: kind),
+                  let coords = shadedRoutes[safe: index]?.coordinates, !coords.isEmpty else { return nil }
             return coords[coords.count / 2]
         }
     }
+
     
     @MainActor
     private func legacyAppleMapsRoute(from origin: CLLocationCoordinate2D, to destination: CLLocationCoordinate2D) async {
@@ -468,14 +478,14 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
         request.transportType = .walking
         do {
             let response = try await MKDirections(request: request).calculate()
-            guard let route = response.routes.first else { shadedRoute = nil; return }
-            shadedRoute = RouteResult(
+            guard let route = response.routes.first else { shadedRoutes = []; return }
+            shadedRoutes = [RouteResult(
                 nodeIds: [], coordinates: route.polyline.coordinates,
                 totalLength: route.distance, totalWeight: 0,
                 estimatedTime: route.expectedTravelTime, label: "Apple Maps (no graph coverage)", segments: []
-            )
+            )]
         } catch {
-            shadedRoute = nil
+            shadedRoutes = []
         }
     }
     
@@ -570,5 +580,11 @@ extension MKMapItem {
         lhs.placemark.coordinate.latitude == rhs.placemark.coordinate.latitude &&
         lhs.placemark.coordinate.longitude == rhs.placemark.coordinate.longitude &&
         lhs.name == rhs.name
+    }
+}
+
+private extension Array {
+    subscript(safe index: Int) -> Element? {
+        indices.contains(index) ? self[index] : nil
     }
 }
