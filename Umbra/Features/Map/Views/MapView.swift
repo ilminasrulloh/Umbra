@@ -222,7 +222,7 @@ struct MapView: View {
                                         resolvedOrigin = nil
                                         editingField = .destination
                                         viewModel.calculatedRoutes = []
-                                        viewModel.shadedRoute = nil
+                                        viewModel.shadedRoutes = []
                                         viewModel.userDestinationText = ""
                                     }
                                 }
@@ -291,7 +291,7 @@ struct MapView: View {
                         resolvedOrigin = nil
                         editingField = .destination
                         viewModel.calculatedRoutes = []
-                        viewModel.shadedRoute = nil
+                        viewModel.shadedRoutes = []
                         viewModel.userDestinationText = ""
                     }
                 }
@@ -306,16 +306,23 @@ struct MapView: View {
                 .stroke(.yellow,
                         lineWidth: selectedRouteKind == "fastest" ? 6 : 2)
         }
-        
-        if let route = viewModel.shadedRoute, !route.coordinates.isEmpty {
-            ForEach(route.segments) { segment in
-                
-                let polyline = MapPolyline(coordinates: segment.coordinate)
-                let strokeWidth: CGFloat = selectedRouteKind == "shaded" ? 6 : 2
-                
-                polyline.stroke(segment.color, lineWidth: strokeWidth)
-            }
+
+        ForEach(shadedRouteSegments, id: \.segment.id) { item in
+            let polyline = MapPolyline(coordinates: item.segment.coordinate)
+            let strokeWidth: CGFloat = selectedRouteKind == item.kind ? 6 : 2
+            polyline.stroke(item.segment.color, lineWidth: strokeWidth)
         }
+    }
+
+    /// Flatten semua shaded route jadi satu list segment + kind-nya, dengan rute yang
+    /// lagi dipilih ditaruh paling akhir supaya digambar di atas (nggak ketutupan rute lain).
+    private var shadedRouteSegments: [(kind: String, segment: RouteSegment)] {
+        let all = viewModel.shadedRoutes.enumerated().flatMap { index, route -> [(kind: String, segment: RouteSegment)] in
+            guard !route.coordinates.isEmpty else { return [] }
+            let kind = index == 0 ? "shaded" : "shaded\(index + 1)"
+            return route.segments.map { (kind, $0) }
+        }
+        return all.sorted { ($0.kind == selectedRouteKind ? 1 : 0) < ($1.kind == selectedRouteKind ? 1 : 0) }
     }
     
     private var orderedRouteOptions: [RouteOption] {

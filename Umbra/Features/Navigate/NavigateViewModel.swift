@@ -18,6 +18,7 @@ final class NavigateViewModel: NSObject {
     var shadedRouteResult: RouteResult?
     var camera: MapCameraPosition = .automatic
     var currentStepIndex: Int = 0
+    private(set) var traveledDistance: CLLocationDistance = 0
     var distanceToNextStep: CLLocationDistance = 0
     var isNavigating = false
     var errorMessage: String?
@@ -50,9 +51,7 @@ final class NavigateViewModel: NSObject {
     var remainingDistance: CLLocationDistance {
         guard let shadedRouteResult else { return 0 }
         let total = cumulativeDistances.last ?? shadedRouteResult.totalLength
-        guard currentStepIndex < maneuvers.count else { return 0 }
-        let traveled = maneuvers[currentStepIndex].distanceFromStart
-        return max(total - traveled, 0)
+        return max(total - traveledDistance, 0)
     }
     
     var remainingTravelTime: TimeInterval {
@@ -104,6 +103,9 @@ final class NavigateViewModel: NSObject {
     /// makin besar = makin responsif tapi makin terasa patah. 0.12–0.15 biasanya pas untuk jalan kaki.
     private let smoothingFactor: Double = 0.12
 
+    /// Harus sinkron dengan cap yang sama di `MapViewModel.routeOptions` (maks 2 shaded
+    /// slot: "shaded" + "shaded2" — sisa 1 slot dari total maks 3 dipakai "fastest").
+    private let maxShadedRouteSlots = 2
     // MARK: - User camera override
     /// Selama ini `true`, `applyCamera()` boleh menimpa binding `camera`. Begitu user
     /// mulai gesture (pan/pinch) di peta, ini di-set `false` supaya loop kamera BERHENTI
@@ -224,11 +226,11 @@ final class NavigateViewModel: NSObject {
         if kind == "fastest" {
             await calculateNativeRoute(from: origin, to: destination)
         } else {
-            await calculateShadedRoute(from: origin, to: destination)
+            await calculateShadedRoute(from: origin, to: destination, kind: kind)
         }
     }
     
-    func calculateShadedRoute(from origin: CLLocationCoordinate2D, to destination: CLLocationCoordinate2D) async {
+    func calculateShadedRoute(from origin: CLLocationCoordinate2D, to destination: CLLocationCoordinate2D, kind: String = "shaded") async {
         guard let graph, let planner else {
             errorMessage = "Route graph (1400.json) failed to load — check it's included in the app bundle."
             return
@@ -238,8 +240,6 @@ final class NavigateViewModel: NSObject {
         let endSnap = graph.snap(to: destination)
         
         guard case .snapped(let sNode, _) = startSnap, case .snapped(let eNode, _) = endSnap else {
-            // Only reachable if the graph is empty or somehow degenerate (see snap()'s
-            // generous limit) — not a normal "too far away" case anymore.
             errorMessage = "Couldn't find any usable point in the route graph near your start/destination."
             return
         }
@@ -249,7 +249,18 @@ final class NavigateViewModel: NSObject {
         let (leadLeg, trailLeg) = await (lead, trail)
         
         do {
-            let core = try planner.shadiestRoute(from: sNode.id, to: eNode.id)
+            // Sama seperti MapViewModel: minta sampai `maxShadedRouteSlots` rute teduh yang
+            // berbeda, terus ambil index yang sesuai kind-nya ("shaded" -> 0, "shaded2" -> 1, dst).
+            let cores = try planner.shadiestRoutes(from: sNode.id, to: eNode.id, maxRoutes: maxShadedRouteSlots)
+            let index = shadedRouteIndex(for: kind)
+            
+            // Kalau alternate yang diminta ternyata nggak ada (misal cuma 1 shaded route yang
+            // valid), fallback ke rute teduh utama daripada gagal total.
+            guard let core = cores.indices.contains(index) ? cores[index] : cores.first else {
+                self.errorMessage = "No connected path exists in the route graph between these two points."
+                return
+            }
+            
             let finalRoute = stitch(lead: leadLeg, core: core, trail: trailLeg)
             
             self.shadedRouteResult = finalRoute
@@ -298,7 +309,6 @@ final class NavigateViewModel: NSObject {
         guard !didArrive else { return }
         guard !maneuvers.isEmpty, let shadedRouteResult else { return }
         
-        // Find nearest coordinate index along the stitched polyline to know how far along we are.
         var bestIdx = 0
         var bestDist = CLLocationDistance.greatestFiniteMagnitude
         for (i, coord) in shadedRouteResult.coordinates.enumerated() {
@@ -309,6 +319,7 @@ final class NavigateViewModel: NSObject {
             }
         }
         let traveled = cumulativeDistances.indices.contains(bestIdx) ? cumulativeDistances[bestIdx] : 0
+        traveledDistance = traveled   // <- BARU: simpan buat dipakai remainingDistance/remainingTravelTime
         
         if let nextIdx = maneuvers.firstIndex(where: { $0.distanceFromStart >= traveled - 1 }), nextIdx != currentStepIndex {
             currentStepIndex = nextIdx
@@ -364,6 +375,15 @@ final class NavigateViewModel: NSObject {
         let clampedT = max(0, min(1, t))
         let projected = MKMapPoint(x: a.x + clampedT * dx, y: a.y + clampedT * dy)
         return point.distance(to: projected)
+    }
+    
+    // SHADED ROUTE OPTIONS
+    /// "shaded" -> 0, "shaded2" -> 1, "shaded3" -> 2, dst.
+    private func shadedRouteIndex(for kind: String) -> Int {
+        guard kind.hasPrefix("shaded") else { return 0 }
+        let suffix = kind.dropFirst("shaded".count)
+        guard !suffix.isEmpty, let n = Int(suffix) else { return 0 }
+        return n - 1
     }
     
     // END NAVIGATION
