@@ -113,13 +113,13 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
     var userDestinationText = ""
     var showDestination = true
     
-    var calculatedRoutes: [MKRoute] = []
+    var nativeRoutes: [MKRoute] = []
     var shadedRoutes: [RouteResult] = []
     
     var routeOptions: [RouteOption] {
         var options: [RouteOption] = []
 
-        let plain = calculatedRoutes.first
+        let plain = nativeRoutes.first
 
         // Buang shaded route yang sebenarnya sama aja sama rute standard Apple Maps.
         let distinctShaded = shadedRoutes.filter { shaded in
@@ -158,10 +158,6 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
         return options
     }
     
-    private var routeGraph: RouteGraph?
-    private var routePlanner: RoutePlanner?
-    private let snapThresholdMeters: CLLocationDistance = 20
-    
     private var searchDebounceTask: Task<Void, Never>?
     private var distanceResolutionTask: Task<Void, Never>?
     private var sortTask: Task<Void, Never>?
@@ -181,7 +177,6 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
     override init() {
         super.init()
         initSearchCompleter()
-        loadRouteGraph()
     }
     
     @MainActor
@@ -201,77 +196,19 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
     @MainActor
     func calculateWalkingRoute(to destination: CLLocationCoordinate2D) async {
         guard let origin = locationManager.userLocation?.coordinate else {
-            calculatedRoutes = []
+            nativeRoutes = []
             return
         }
-        
-        let request = MKDirections.Request()
-        request.source = MKMapItem(placemark: MKPlacemark(coordinate: origin))
-        request.destination = MKMapItem(placemark: MKPlacemark(coordinate: destination))
-        request.transportType = .walking
-        request.requestsAlternateRoutes = true
-        
-        do {
-            let response = try await MKDirections(request: request).calculate()
-            calculatedRoutes = response.routes
-        } catch {
-            calculatedRoutes = []
-        }
+        nativeRoutes = await routeManager.calculateWalkingRoute(from: origin, to: destination)
     }
     
     @MainActor
-    func calculateShadedWalkingRoute(to destination: CLLocationCoordinate2D) async {
+    func calculateShadedRoute(to destination: CLLocationCoordinate2D) async {
         guard let origin = locationManager.userLocation?.coordinate else {
-            shadedRoutes = []
+            nativeRoutes = []
             return
         }
-
-        let originLocation = CLLocation(latitude: origin.latitude, longitude: origin.longitude)
-        let destLocation = CLLocation(latitude: destination.latitude, longitude: destination.longitude)
-        let distanceOriginAndDest = originLocation.distance(from: destLocation)
-
-        guard distanceOriginAndDest <= 10000 else {
-            await legacyAppleMapsRoute(from: origin, to: destination)
-            return
-        }
-
-        guard let graph = routeGraph, let planner = routePlanner else {
-            await legacyAppleMapsRoute(from: origin, to: destination)
-            return
-        }
-
-        let startSnap = graph.snap(to: origin)
-        let endSnap = graph.snap(to: destination)
-
-        guard case .snapped(let sNode, _) = startSnap,
-              case .snapped(let eNode, _) = endSnap else {
-            await legacyAppleMapsRoute(from: origin, to: destination)
-            return
-        }
-
-        let startNodeLocation = CLLocation(latitude: sNode.coordinate.latitude, longitude: sNode.coordinate.longitude)
-        let endNodeLocation = CLLocation(latitude: eNode.coordinate.latitude, longitude: eNode.coordinate.longitude)
-
-        let distanceFromOriginToGraph = originLocation.distance(from: startNodeLocation)
-        let distanceFromDestToGraph = destLocation.distance(from: endNodeLocation)
-
-        let maximumGraphSnapDistance: CLLocationDistance = 3000
-
-        guard distanceFromOriginToGraph <= maximumGraphSnapDistance,
-              distanceFromDestToGraph <= maximumGraphSnapDistance else {
-            await legacyAppleMapsRoute(from: origin, to: destination)
-            return
-        }
-        async let lead = nativeWalkingLeg(from: origin, to: sNode.coordinate)
-        async let trail = nativeWalkingLeg(from: eNode.coordinate, to: destination)
-        let (leadLeg, trailLeg) = await (lead, trail)
-
-        do {
-            let cores = try planner.shadiestRoutes(from: sNode.id, to: eNode.id, maxRoutes: 2)
-            shadedRoutes = cores.map { stitch(lead: leadLeg, core: $0, trail: trailLeg) }
-        } catch {
-            await legacyAppleMapsRoute(from: origin, to: destination)
-        }
+        shadedRoutes = await routeManager.calculateShadedRoute(from: origin, to: destination, maxRoutes: 2)
     }
     
     @MainActor
@@ -460,7 +397,7 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
     func midpointCoordinate(for kind: String) -> CLLocationCoordinate2D? {
         switch kind {
         case "fastest":
-            guard let coords = calculatedRoutes.first?.polyline.coordinates, !coords.isEmpty else { return nil }
+            guard let coords = nativeRoutes.first?.polyline.coordinates, !coords.isEmpty else { return nil }
             return coords[coords.count / 2]
         default:
             guard let index = shadedRouteIndex(for: kind),
@@ -495,77 +432,6 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
         } else {
             return String(format: "%.1f km", meters / 1000)
         }
-    }
-    
-    private func loadRouteGraph() {
-        guard let url = Bundle.main.url(forResource: "1400", withExtension: "json") else { return }
-        do {
-            let graph = try RouteGraph(jsonURL: url)
-            self.routeGraph = graph
-            self.routePlanner = RoutePlanner(graph: graph)
-        } catch {
-        }
-    }
-    
-    private func nativeWalkingLeg(from: CLLocationCoordinate2D, to: CLLocationCoordinate2D) async -> RouteResult? {
-        guard CLLocation(latitude: from.latitude, longitude: from.longitude)
-            .distance(from: CLLocation(latitude: to.latitude, longitude: to.longitude)) > snapThresholdMeters
-        else { return nil }
-        
-        let request = MKDirections.Request()
-        request.source = MKMapItem(placemark: MKPlacemark(coordinate: from))
-        request.destination = MKMapItem(placemark: MKPlacemark(coordinate: to))
-        request.transportType = .walking
-        
-        do {
-            let response = try await MKDirections(request: request).calculate()
-            guard let route = response.routes.first else { return nil }
-            return RouteResult(
-                nodeIds: [],
-                coordinates: route.polyline.coordinates,
-                totalLength: route.distance,
-                totalWeight: 0,
-                estimatedTime: route.expectedTravelTime,
-                label: "Approach Leg",
-                segments: []
-            )
-        } catch {
-            return nil
-        }
-    }
-    
-    private func stitch(lead: RouteResult?, core: RouteResult, trail: RouteResult?) -> RouteResult {
-        var allSegments: [RouteSegment] = []
-        var flatCoords: [CLLocationCoordinate2D] = []
-        
-        if let leadLeg = lead, !leadLeg.coordinates.isEmpty {
-            allSegments.append(RouteSegment(coordinate: leadLeg.coordinates, environment: "sunny"))
-            flatCoords += leadLeg.coordinates
-        }
-        
-        if !core.segments.isEmpty {
-            allSegments += core.segments
-            flatCoords += core.coordinates
-        } else {
-            allSegments.append(RouteSegment(coordinate: core.coordinates, environment: core.label))
-            flatCoords += core.coordinates
-        }
-        
-        if let trailLeg = trail, !trailLeg.coordinates.isEmpty {
-            allSegments.append(RouteSegment(coordinate: trailLeg.coordinates, environment: "sunny"))
-            flatCoords += trailLeg.coordinates
-        }
-        
-        return RouteResult(
-            nodeIds: core.nodeIds,
-            coordinates: flatCoords,
-            totalLength: (lead?.totalLength ?? 0) + core.totalLength + (trail?.totalLength ?? 0),
-            totalWeight: core.totalWeight,
-            estimatedTime: (lead?.estimatedTime ?? 0) + core.estimatedTime + (trail?.estimatedTime ?? 0),
-            label: core.label,
-            shadedLength: core.shadedLength,
-            segments: allSegments // Inject the multi-colored segments here!
-        )
     }
 }
 

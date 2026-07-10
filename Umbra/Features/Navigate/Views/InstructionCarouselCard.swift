@@ -103,14 +103,23 @@ private struct InstructionCardContent: View {
 private struct PageDots: View {
     let count: Int
     let currentIndex: Int
-
+    private let maxDots = 6
+    
+    private var visibleRange: Range<Int> {
+        guard count > maxDots else { return 0..<count }
+                let half = maxDots / 2
+                let start = min(max(currentIndex - half, 0), count - maxDots)
+                return start..<(start + maxDots)
+    }
+    
     var body: some View {
         HStack(spacing: 6) {
-            ForEach(0..<count, id: \.self) { index in
+            ForEach(visibleRange, id: \.self) { index in
                 Circle()
                     .fill(index == currentIndex ? Color.primary : Color.secondary.opacity(0.3))
                     .frame(width: 6, height: 6)
             }
         }
+        .animation(.easeInOut(duration: 0.2), value: currentIndex)
     }
 }
