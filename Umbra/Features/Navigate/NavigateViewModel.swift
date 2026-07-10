@@ -15,14 +15,14 @@ import Combine
 @Observable
 final class NavigateViewModel: NSObject {
     
-    var shadedRouteResult: RouteResult?
+    var navigationRouteResult: RouteResult?
     var camera: MapCameraPosition = .automatic
     var currentStepIndex: Int = 0
     private(set) var traveledDistance: CLLocationDistance = 0
     var distanceToNextStep: CLLocationDistance = 0
     var isNavigating = false
     var errorMessage: String?
-
+    
     var didArrive = false
     var isFollowingUser = true
     
@@ -49,15 +49,15 @@ final class NavigateViewModel: NSObject {
     }
     
     var remainingDistance: CLLocationDistance {
-        guard let shadedRouteResult else { return 0 }
-        let total = cumulativeDistances.last ?? shadedRouteResult.totalLength
+        guard let navigationRouteResult else { return 0 }
+        let total = cumulativeDistances.last ?? navigationRouteResult.totalLength
         return max(total - traveledDistance, 0)
     }
     
     var remainingTravelTime: TimeInterval {
-        guard let shadedRouteResult, shadedRouteResult.totalLength > 0 else { return 0 }
-        let fraction = remainingDistance / shadedRouteResult.totalLength
-        return shadedRouteResult.estimatedTime * fraction
+        guard let navigationRouteResult, navigationRouteResult.totalLength > 0 else { return 0 }
+        let fraction = remainingDistance / navigationRouteResult.totalLength
+        return navigationRouteResult.estimatedTime * fraction
     }
     
     var estimatedArrivalDate: Date {
@@ -82,9 +82,6 @@ final class NavigateViewModel: NSObject {
     /// rute yang baru saja selesai — dipakai teks di sheet kedatangan. `nil` kalau belum
     /// ada rute yang selesai (mis. tampilan preview sebelum navigasi pertama dimulai).
     
-    private var graph: RouteGraph?
-    private var planner: RoutePlanner?
-    
     // MARK: - Camera smoothing
     
     /// Nilai "sumber kebenaran" dari GPS/kompas — bisa datang tidak teratur & noisy
@@ -102,7 +99,7 @@ final class NavigateViewModel: NSObject {
     /// Porsi jarak ke target yang ditempuh tiap tick. Makin kecil = makin halus tapi makin "lag" mengikuti;
     /// makin besar = makin responsif tapi makin terasa patah. 0.12–0.15 biasanya pas untuk jalan kaki.
     private let smoothingFactor: Double = 0.12
-
+    
     /// Harus sinkron dengan cap yang sama di `MapViewModel.routeOptions` (maks 2 shaded
     /// slot: "shaded" + "shaded2" — sisa 1 slot dari total maks 3 dipakai "fastest").
     private let maxShadedRouteSlots = 2
@@ -114,17 +111,16 @@ final class NavigateViewModel: NSObject {
     private var followResumeTask: Task<Void, Never>?
     /// Berapa lama menunggu sejak gesture terakhir sebelum kamera otomatis kembali "mengikuti" user.
     private let followResumeDelay: TimeInterval = 4.0
-
+    
     private var maneuvers: [(instruction: String, coordinate: CLLocationCoordinate2D, distanceFromStart: CLLocationDistance, nodeId: String?)] = []
     private var cumulativeDistances: [CLLocationDistance] = []
     
     private(set) var selectedKind: String = "shaded"
+    private let routeManager: RouteManager
     
-    private let snapThresholdMeters: CLLocationDistance = 20
-    
-    override init() {
+    init(routeManager: RouteManager = RouteManager()) {
+        self.routeManager = routeManager
         super.init()
-        loadGraph()
     }
     
     
@@ -140,14 +136,14 @@ final class NavigateViewModel: NSObject {
             self.isFollowingUser = true
         }
     }
-
+    
     /// Panggil ini saat user menekan tombol "recenter" — langsung resume follow mode.
     func resumeFollowingCamera() {
         followResumeTask?.cancel()
         followResumeTask = nil
         isFollowingUser = true
     }
-
+    
     /// Panggil ini saat carousel instruksi digeser ke step yang BUKAN step aktif —
     /// kamera berhenti mengikuti GPS user dan pindah (langsung, tanpa interpolasi,
     /// sama seperti `recenterCamera`) ke titik maneuver step tsb, supaya user bisa
@@ -203,7 +199,7 @@ final class NavigateViewModel: NSObject {
         didArrive = false
         arrivalSummary = nil
         await calculateRoute(from: origin, to: destination, kind: kind)
-        if shadedRouteResult != nil {
+        if navigationRouteResult != nil {
             isNavigating = true
             startCameraLoop()
         }
@@ -211,7 +207,7 @@ final class NavigateViewModel: NSObject {
     
     func stopNavigation() {
         isNavigating = false
-        shadedRouteResult = nil
+        navigationRouteResult = nil
         currentStepIndex = 0
         stopCameraLoop()
         displayedCoordinate = nil
@@ -231,87 +227,42 @@ final class NavigateViewModel: NSObject {
     }
     
     func calculateShadedRoute(from origin: CLLocationCoordinate2D, to destination: CLLocationCoordinate2D, kind: String = "shaded") async {
-        guard let graph, let planner else {
-            errorMessage = "Route graph (1400.json) failed to load — check it's included in the app bundle."
+        let cores = await routeManager.calculateShadedRoute(from: origin, to: destination, maxRoutes: maxShadedRouteSlots)
+        
+        guard !cores.isEmpty else {
             return
         }
         
-        let startSnap = graph.snap(to: origin)
-        let endSnap = graph.snap(to: destination)
+        let index = shadedRouteIndex(for: kind)
+        let finalRoute = cores.indices.contains(index) ? cores[index] : cores[0]
         
-        guard case .snapped(let sNode, _) = startSnap, case .snapped(let eNode, _) = endSnap else {
-            errorMessage = "Couldn't find any usable point in the route graph near your start/destination."
-            return
-        }
+        self.navigationRouteResult = finalRoute
+        self.currentStepIndex = 0
+        self.errorMessage = nil
         
-        async let lead = nativeWalkingLegIfNeeded(from: origin, to: sNode.coordinate)
-        async let trail = nativeWalkingLegIfNeeded(from: eNode.coordinate, to: destination)
-        let (leadLeg, trailLeg) = await (lead, trail)
-        
-        do {
-            // Sama seperti MapViewModel: minta sampai `maxShadedRouteSlots` rute teduh yang
-            // berbeda, terus ambil index yang sesuai kind-nya ("shaded" -> 0, "shaded2" -> 1, dst).
-            let cores = try planner.shadiestRoutes(from: sNode.id, to: eNode.id, maxRoutes: maxShadedRouteSlots)
-            let index = shadedRouteIndex(for: kind)
-            
-            // Kalau alternate yang diminta ternyata nggak ada (misal cuma 1 shaded route yang
-            // valid), fallback ke rute teduh utama daripada gagal total.
-            guard let core = cores.indices.contains(index) ? cores[index] : cores.first else {
-                self.errorMessage = "No connected path exists in the route graph between these two points."
-                return
-            }
-            
-            let finalRoute = stitch(lead: leadLeg, core: core, trail: trailLeg)
-            
-            self.shadedRouteResult = finalRoute
-            self.currentStepIndex = 0
-            self.errorMessage = nil
-            buildManeuvers(from: finalRoute)
-        } catch RoutePlannerError.noPathFound {
-            self.errorMessage = "No connected path exists in the route graph between these two points."
-        } catch {
-            self.errorMessage = "Couldn't compute a route from the graph: \(error)"
-        }
+        buildManeuvers(from: finalRoute)
     }
     
     func calculateNativeRoute(from origin: CLLocationCoordinate2D, to destination: CLLocationCoordinate2D) async {
-        let request = MKDirections.Request()
-        request.source = MKMapItem(placemark: MKPlacemark(coordinate: origin))
-        request.destination = MKMapItem(placemark: MKPlacemark(coordinate: destination))
-        request.transportType = .walking
-        
-        do {
-            let response = try await MKDirections(request: request).calculate()
-            guard let route = response.routes.first else {
-                errorMessage = "Rute tidak ditemukan"
-                return
-            }
-            let result = RouteResult(
-                nodeIds: [],
-                coordinates: route.polyline.coordinates,
-                totalLength: route.distance,
-                totalWeight: 0,
-                estimatedTime: route.expectedTravelTime,
-                label: "Fastest (Apple Maps)",
-                segments: []
-            )
-            self.shadedRouteResult = result
+        if let result = await routeManager.nativeRouteResult(from: origin, to: destination) {
+            self.navigationRouteResult = result
             self.currentStepIndex = 0
             self.errorMessage = nil
+            
             buildManeuvers(from: result)
-        } catch {
-            self.errorMessage = "Gagal menghitung rute: \(error.localizedDescription)"
+        } else {
+            return
         }
     }
     
     func updateProgress(userLocation: CLLocation) {
         checkArrival(userLocation: userLocation)
         guard !didArrive else { return }
-        guard !maneuvers.isEmpty, let shadedRouteResult else { return }
+        guard !maneuvers.isEmpty, let navigationRouteResult else { return }
         
         var bestIdx = 0
         var bestDist = CLLocationDistance.greatestFiniteMagnitude
-        for (i, coord) in shadedRouteResult.coordinates.enumerated() {
+        for (i, coord) in navigationRouteResult.coordinates.enumerated() {
             let d = userLocation.distance(from: CLLocation(latitude: coord.latitude, longitude: coord.longitude))
             if d < bestDist {
                 bestDist = d
@@ -320,6 +271,8 @@ final class NavigateViewModel: NSObject {
         }
         let traveled = cumulativeDistances.indices.contains(bestIdx) ? cumulativeDistances[bestIdx] : 0
         traveledDistance = traveled   // <- BARU: simpan buat dipakai remainingDistance/remainingTravelTime
+        
+        guard isFollowingUser else { return }
         
         if let nextIdx = maneuvers.firstIndex(where: { $0.distanceFromStart >= traveled - 1 }), nextIdx != currentStepIndex {
             currentStepIndex = nextIdx
@@ -333,15 +286,15 @@ final class NavigateViewModel: NSObject {
             distanceToNextStep = userLocation.distance(from: maneuverLocation)
         }
     }
-
+    
     /// Cek apakah user sudah melenceng dari garis rute lebih dari threshold (meter)
     func isOffRoute(_ location: CLLocation, threshold: CLLocationDistance = 50) -> Bool {
         //        guard let route else { return false }
-        guard let shadedRouteResult, shadedRouteResult.coordinates.count > 1 else { return false }
+        guard let navigationRouteResult, navigationRouteResult.coordinates.count > 1 else { return false }
         //        let polyline = route.polyline
         //        guard polyline.pointCount > 1 else { return false }
         
-        let coords = shadedRouteResult.coordinates
+        let coords = navigationRouteResult.coordinates
         let userPoint = MKMapPoint(location.coordinate)
         //        let points = polyline.points()
         
@@ -393,7 +346,7 @@ final class NavigateViewModel: NSObject {
     /// `stopNavigation()` membersihkan state navigasi seperti biasa.
     private func handleArrival() {
         guard !didArrive else { return }
-        arrivalSummary = shadedRouteResult
+        arrivalSummary = navigationRouteResult
         didArrive = true
         stopNavigation()
     }
@@ -413,84 +366,6 @@ final class NavigateViewModel: NSObject {
         }
     }
     
-    
-    
-    
-    // GRAPH/JSON LOADING
-    
-    private func loadGraph() {
-        guard let url = Bundle.main.url(forResource: "1400", withExtension: "json") else {
-            errorMessage = "Could not find 1400.json in the app bundle — check Target Membership & Copy Bundle Resources."
-            return
-        }
-        do {
-            let loadedGraph = try RouteGraph(jsonURL: url)
-            self.graph = loadedGraph
-            self.planner = RoutePlanner(graph: loadedGraph)
-        } catch {
-            errorMessage = "Failed to load route graph: \(error.localizedDescription)"
-        }
-    }
-    
-    // STITCHING ROUTES
-    
-    /// Bridges the gap between an arbitrary point (user's real origin/destination)
-    /// and the nearest graph node, using a short native MapKit walking leg. This is
-    /// the ONLY place MapKit routing is used — the core route always comes from the JSON.
-    private func nativeWalkingLegIfNeeded(from: CLLocationCoordinate2D, to: CLLocationCoordinate2D) async -> RouteResult? {
-        guard calculateDistance(a: from, b: to) > snapThresholdMeters else { return nil }
-        
-        let request = MKDirections.Request()
-        request.source = MKMapItem(placemark: MKPlacemark(coordinate: from))
-        request.destination = MKMapItem(placemark: MKPlacemark(coordinate: to))
-        request.transportType = .walking
-        
-        do {
-            let response = try await MKDirections(request: request).calculate()
-            guard let newRoute = response.routes.first else { return nil }
-            return RouteResult(
-                nodeIds: [],
-                coordinates: newRoute.polyline.coordinates,
-                totalLength: newRoute.distance,
-                totalWeight: 0,
-                estimatedTime: newRoute.expectedTravelTime,
-                label: "Approach Leg",
-                segments: []
-            )
-        } catch {
-            return nil
-        }
-    }
-    
-    private func stitch(lead: RouteResult?, core: RouteResult, trail: RouteResult?) -> RouteResult {
-        var coords = lead?.coordinates ?? []
-        if let last = coords.last, let first = core.coordinates.first, calculateDistance(a: last, b: first) < 1 {
-            coords.removeLast()
-        }
-        coords += core.coordinates
-        
-        if let trail {
-            if let last = coords.last, let first = trail.coordinates.first, calculateDistance(a: last, b: first) < 1 {
-                coords.removeLast()
-            }
-            coords += trail.coordinates
-        }
-        
-        return RouteResult(
-            nodeIds: core.nodeIds,
-            coordinates: coords,
-            totalLength: (lead?.totalLength ?? 0) + core.totalLength + (trail?.totalLength ?? 0),
-            totalWeight: core.totalWeight,
-            estimatedTime: (lead?.estimatedTime ?? 0) + core.estimatedTime + (trail?.estimatedTime ?? 0),
-            label: core.label, segments: []
-        )
-    }
-    
-    // MANEUVERS
-    
-    /// The JSON graph doesn't carry instruction text like MKRoute.steps does, so we
-    /// derive simple "turn left/right" maneuvers from bearing changes along the
-    /// stitched polyline, same approach used in RouteMapView's NavigationSession.
     private func buildManeuvers(from route: RouteResult) {
         cumulativeDistances = [0]
         let coords = route.coordinates
@@ -512,28 +387,64 @@ final class NavigateViewModel: NSObject {
             return false
         }
         
+        // MARK: - Lift nodes
+        // Each entry: nodeId -> the floor name to announce when arriving fresh (not from its paired node).
+        let liftFloorNames: [String: String] = [
+            "-20008": "B2",
+            "-20009": "G"
+        ]
+        
+        /// Given a lift node, returns the *other* node in its pair (the only transition
+        /// that counts as "still riding the lift" rather than entering/exiting it).
+        func liftPartner(of nodeId: String) -> String? {
+            switch nodeId {
+            case "-20008": return "-20009"
+            case "-20009": return "-20008"
+            default: return nil
+            }
+        }
+        
+        func isLiftNode(_ nodeId: String) -> Bool {
+            liftFloorNames[nodeId] != nil
+        }
+        
         var isCurrentlyInside = false
         
         for i in 0..<nodes.count {
             let currentNodeId = nodes[i]
+            let previousNodeId = i > 0 ? nodes[i - 1] : nil
+            let coord = i < coords.count ? coords[i] : (coords.last ?? .init())
+            let dist = i < cumulativeDistances.count ? cumulativeDistances[i] : (cumulativeDistances.last ?? 0)
+            
+            // --- Lift handling ---
+            if isLiftNode(currentNodeId) {
+                let partner = liftPartner(of: currentNodeId)
+                let arrivingFromPartner = (previousNodeId != nil && previousNodeId == partner)
+                
+                if !arrivingFromPartner {
+                    // Fresh entry into the lift — announce destination floor.
+                    let floorName = liftFloorNames[currentNodeId] ?? "?"
+                    maneuvers.append((instruction: "Take lift to \(floorName)", coordinate: coord, distanceFromStart: dist, nodeId: currentNodeId))
+                }
+                // If arriving from its partner, we're mid-ride — no extra instruction needed here.
+            } else if let previousNodeId, isLiftNode(previousNodeId) {
+                // We just left a lift node and this new node is NOT its partner -> exiting the lift.
+                let partner = liftPartner(of: previousNodeId)
+                if currentNodeId != partner {
+                    maneuvers.append((instruction: "Exit the lift", coordinate: coord, distanceFromStart: dist, nodeId: currentNodeId))
+                }
+            }
+            
+            // --- Existing indoor-building handling ---
             let indoor = isIndoorNode(currentNodeId)
             
             if !isCurrentlyInside && indoor {
-                let instruction = "Enter the Building"
-                let coord = i < coords.count ? coords[i] : (coords.last ?? .init())
-                let dist = i < cumulativeDistances.count ? cumulativeDistances[i] : (cumulativeDistances.last ?? 0)
-                maneuvers.append((instruction: instruction, coordinate: coord, distanceFromStart: dist, nodeId: currentNodeId))
+                maneuvers.append((instruction: "Enter the Building", coordinate: coord, distanceFromStart: dist, nodeId: currentNodeId))
                 isCurrentlyInside = true
             } else if isCurrentlyInside && indoor {
-                let instruction = "Walk inside the Building"
-                let coord = i < coords.count ? coords[i] : (coords.last ?? .init())
-                let dist = i < cumulativeDistances.count ? cumulativeDistances[i] : (cumulativeDistances.last ?? 0)
-                maneuvers.append((instruction: instruction, coordinate: coord, distanceFromStart: dist, nodeId: currentNodeId))
+                maneuvers.append((instruction: "Walk inside the Building", coordinate: coord, distanceFromStart: dist, nodeId: currentNodeId))
             } else if isCurrentlyInside && !indoor {
-                let instruction = "Exit the Building"
-                let coord = i < coords.count ? coords[i] : (coords.last ?? .init())
-                let dist = i < cumulativeDistances.count ? cumulativeDistances[i] : (cumulativeDistances.last ?? 0)
-                maneuvers.append((instruction: instruction, coordinate: coord, distanceFromStart: dist, nodeId: currentNodeId))
+                maneuvers.append((instruction: "Exit the Building", coordinate: coord, distanceFromStart: dist, nodeId: currentNodeId))
                 isCurrentlyInside = false
             }
         }
@@ -550,6 +461,9 @@ final class NavigateViewModel: NSObject {
         }
         
         maneuvers.sort { $0.distanceFromStart < $1.distanceFromStart }
+        
+        maneuvers = mergeSimilarManeuvers(input: maneuvers)
+        
         maneuvers.append((instruction: "Arrive at destination", coordinate: coords.last ?? .init(), distanceFromStart: cumulativeDistances.last ?? 0, nodeId: nil))
     }
     
@@ -559,6 +473,34 @@ final class NavigateViewModel: NSObject {
         let y = sin(dLon) * cos(lat2)
         let x = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(dLon)
         return atan2(y, x) * 180 / .pi
+    }
+    
+    private func mergeSimilarManeuvers(input: [(instruction: String, coordinate: CLLocationCoordinate2D, distanceFromStart: CLLocationDistance, nodeId: String?)]) -> [(instruction: String, coordinate: CLLocationCoordinate2D, distanceFromStart: CLLocationDistance, nodeId: String?)] {
+        
+        let threshold: CLLocationDistance = 4
+        
+        guard !input.isEmpty else { return [] }
+        
+        var merged: [(instruction: String, coordinate: CLLocationCoordinate2D, distanceFromStart: CLLocationDistance, nodeId: String?)] = [input[0]]
+        
+        for current in input.dropFirst(){
+            let last = merged[merged.count-1]
+            
+            
+            if current.distanceFromStart - last.distanceFromStart < threshold {
+                print("x")
+                merged[merged.count-1] = (
+                    instruction: last.instruction,
+                    coordinate: last.coordinate,
+                    distanceFromStart: last.distanceFromStart,
+                    nodeId: last.nodeId
+                )
+            } else {
+                merged.append(current)
+            }
+        }
+        
+        return merged
     }
     
     // CAMERA LOOP

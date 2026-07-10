@@ -29,7 +29,8 @@ struct MapView: View {
     @State var currentPresentationDetents: PresentationDetent = .fraction(0.1)
     @FocusState var clickedTextField: Field?
     
-    let locationManager = LocationManager()
+//    let locationManager = LocationManager()
+    let routeManager = RouteManager()
     @State private var viewModel = MapViewModel()
     
     @State private var selectedRouteKind = "shaded"
@@ -59,7 +60,7 @@ struct MapView: View {
     }
     
     private var coneRotationDegrees: Double? {
-        guard let heading = locationManager.heading, heading.headingAccuracy >= 0 else { return nil }
+        guard let heading = viewModel.locationManager.heading, heading.headingAccuracy >= 0 else { return nil }
         let value = heading.trueHeading >= 0 ? heading.trueHeading : heading.magneticHeading
         return value
     }
@@ -84,7 +85,7 @@ struct MapView: View {
         GeometryReader { geo in
             ZStack(alignment: .bottom) {
                 Map(position: $viewModel.userCurrentPosition) {
-                    if let userCoordinate = locationManager.userLocation?.coordinate {
+                    if let userCoordinate = viewModel.locationManager.userLocation?.coordinate {
                         Annotation("", coordinate: userCoordinate) {
                             UserLocationIndicator(headingDegrees: coneRotationDegrees)
                         }
@@ -161,7 +162,7 @@ struct MapView: View {
                             }
                             guard let destinationCoordinate = resolvedDestination?.coordinate else { return }
                             Task {
-                                await viewModel.calculateShadedWalkingRoute(to: destinationCoordinate)
+                                await viewModel.calculateShadedRoute(to: destinationCoordinate)
                                 await viewModel.calculateWalkingRoute(to: destinationCoordinate)
                             }
                         }
@@ -221,7 +222,7 @@ struct MapView: View {
                                         resolvedDestination = nil
                                         resolvedOrigin = nil
                                         editingField = .destination
-                                        viewModel.calculatedRoutes = []
+                                        viewModel.nativeRoutes = []
                                         viewModel.shadedRoutes = []
                                         viewModel.userDestinationText = ""
                                     }
@@ -290,7 +291,7 @@ struct MapView: View {
                         resolvedDestination = nil
                         resolvedOrigin = nil
                         editingField = .destination
-                        viewModel.calculatedRoutes = []
+                        viewModel.nativeRoutes = []
                         viewModel.shadedRoutes = []
                         viewModel.userDestinationText = ""
                     }
@@ -301,7 +302,7 @@ struct MapView: View {
     
     @MapContentBuilder
     private var routeOverlay: some MapContent {
-        if let route = viewModel.calculatedRoutes.first {
+        if let route = viewModel.nativeRoutes.first {
             MapPolyline(route.polyline)
                 .stroke(.yellow,
                         lineWidth: selectedRouteKind == "fastest" ? 6 : 2)
