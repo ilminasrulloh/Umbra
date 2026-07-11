@@ -83,19 +83,20 @@ struct BottomPanelSheetView: View {
             
             if isExtended {
                 if activeSearchText.wrappedValue.isEmpty {
-                    Text("")
+                    Text("Nearby")
                         .fontWeight(.medium)
                         .padding(.leading, 20)
                     
+                    ForEach(viewModel.nearbyResults.prefix(3), id: \.stableID) { result in
+                        NearbyLocationView(
+                            viewModel: viewModel,
+                            result: result,
+                            onSeeRoutes: onSeeRoutes
+                        )
+                    }
+                    
                     Spacer()
                     
-//                    ForEach(viewModel.nearbyResults.prefix(3), id: \.stableID) { result in
-//                        NearbyLocationView(
-//                            viewModel: viewModel,
-//                            result: result,
-//                            onSeeRoutes: onSeeRoutes
-//                        )
-//                    }
                 } else {
                     ScrollView {
                         VStack(spacing: 0) {
@@ -111,6 +112,9 @@ struct BottomPanelSheetView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
+        }
+        .task{
+            await viewModel.getNearbyPlaces()
         }
     }
 }

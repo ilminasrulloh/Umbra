@@ -32,31 +32,16 @@ struct NearbyLocationView: View {
                     VStack(alignment: .leading) {
                         Text(result.name ?? "Unknown")
                             .foregroundStyle(.primary)
+                            .multilineTextAlignment(.leading)
                         Text(result.placemark.title ?? "")
                             .lineLimit(1)
                             .truncationMode(.tail)
                             .foregroundStyle(Color(.systemGray2))
                             .font(.subheadline)
+                            .multilineTextAlignment(.leading)
                     }
                 }
-                
-                if viewModel.nearbyResults.first == result {
-                    Button {
-                        selectDestination()
-                    } label: {
-                        Text("See Routes")
-                            .font(.footnote)
-                            .fontWeight(.medium)
-                            .foregroundStyle(Color(.white))
-                            .padding(8)
-                            .frame(maxWidth: .infinity)
-                            .background(Color(.blue))
-                            .cornerRadius(25)
-                    }
-                    .padding(.top, 8)
-                    .padding(.bottom, 4)
-                }
-                
+//
                 Divider()
                     .padding(.top, 10)
             }
@@ -66,7 +51,7 @@ struct NearbyLocationView: View {
             .background(Color(.systemGray6))
         }
         .cornerRadius(20)
-        .padding(.bottom, viewModel.nearbyResults.first == result ? 8 : 4)
+//        .padding(.bottom, 4)
         .padding(.horizontal, 30)
     }
     
