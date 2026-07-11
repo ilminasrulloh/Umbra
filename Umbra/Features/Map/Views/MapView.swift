@@ -23,8 +23,6 @@ enum DirectionsSheetState: Equatable {
 }
 
 struct MapView: View {
-    @State var expandUVIndexButton = false
-    @State var expandWeatherButton = false
     @State var showBottomPanelSheet = true
     @State var currentPresentationDetents: PresentationDetent = .fraction(0.1)
     @FocusState var clickedTextField: Field?
@@ -177,24 +175,25 @@ struct MapView: View {
                 }
                 .overlay(alignment: .topLeading) {
                     WeatherAndUVIndexView(
-                        viewModel: viewModel,
-                        expandUVIndexButton: $expandUVIndexButton,
-                        expandWeatherButton: $expandWeatherButton
+                        viewModel: viewModel
                     )
+                    .padding(.top, 60)
+                    .padding(.leading, 20)
                 }
                 
                 VStack {
                     Spacer()
                     HStack {
-                        Spacer()
                         recenterButton
-                            .padding(.trailing, 20)
+                            .padding(.leading, 20)
                             .padding(
                                 .bottom,
                                 directionsSheetState != .hidden
                                 ? collapsedSheetHeight + 16
                                 : geo.size.height * 0.1 + 16
                             )
+                        
+                        Spacer()
                     }
                 }
                 

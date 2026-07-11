@@ -98,11 +98,16 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
     
     var results: [MKLocalSearchCompletion] = []
     var nearbyResults: [MKMapItem] = []
-    var temperature: String = "27°"
-    var uvIndex: Int = 4
-    var weatherSymbolName: String = "cloud.sun"
-    var feelsLike: String = "Feels like 32°"
-    var uvCategory: String = "Moderate UV Index"
+    var temperature: Int = 28
+    var uvIndex: Int = 7
+    var feelsLike: Int = 32
+    var weatherEmoji: String = "sun.max"
+    
+    var weatherText: String = "⚠️ Scorching hot out there! 🥵"
+    var weatherSuggestion: String = "Pick **Recommended Route** for the Best Sun Protection"
+    var uvIndexText: String = "High"
+    var itemReminderText: String = "Don't forget your **sunscreen** and a handy **umbrella**!"
+    var itemReminderEmoji: String = "⛱️"
     
     let weatherService = WeatherService.shared
     private let completer = MKLocalSearchCompleter()
@@ -387,13 +392,43 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
             let weather = try await weatherService.weather(for: location)
             let current = weather.currentWeather
             
-            self.temperature = "\(Int(current.temperature.value))°"
-            self.feelsLike = "Feels like \(Int(current.apparentTemperature.value))°"
+            self.temperature = Int(current.temperature.value)
+            self.feelsLike = Int(current.apparentTemperature.value)
             self.uvIndex = Int(current.uvIndex.value)
-            self.uvCategory = "\(current.uvIndex.category.description) UV Index"
-            self.weatherSymbolName = current.symbolName
+            self.weatherEmoji = current.symbolName
+            
+            updateWeatherValue()
         } catch {
             return
+        }
+    }
+    
+    func updateWeatherValue(){
+        if self.temperature >= 30 {
+            self.weatherText = "⚠️ Scorching hot out there! 🥵"
+            self.weatherSuggestion = "Pick **Recommended Route** for the Best Sun Protection"
+            self.itemReminderText = "Don't forget your **sunscreen** and a handy **umbrella**!"
+            self.itemReminderEmoji = "⛱️"
+        } else if self.temperature <= 18 {
+            self.weatherText = "🍂 It's kinda cold today! 🫨"
+            self.weatherSuggestion = "**Any routes** are fine today!"
+            self.itemReminderText = "Dress **warmly** and bring your **umbrella**!"
+            self.itemReminderEmoji = "🧥"
+        } else {
+            self.weatherText = "☺️ The weather is nice today!"
+            self.weatherSuggestion = "Pick **Recommended Route** for more Comfort"
+            self.itemReminderText = "Don't forget to use your **sunscreen**"
+            self.itemReminderEmoji = "🧴"
+        }
+        
+        if self.uvIndex >= 8 {
+            self.uvIndexText = "Extreme"
+        } else if self.uvIndex >= 6 {
+            self.uvIndexText = "High"
+        } else if self.uvIndex >= 3 {
+            self.uvIndexText = "Moderate"
+        } else {
+            self.uvIndexText = "Low"
         }
     }
     
