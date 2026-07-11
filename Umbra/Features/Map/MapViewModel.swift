@@ -149,7 +149,7 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
             options.append(RouteOption(
                 kind: "fastest",
                 shadePercent: 0,
-                subtitle: isOnlyRoute ? "Recommended - Apple Maps Route" : "Apple Maps Route",
+                subtitle: "Apple Maps Route",
                 minutes: max(Int(plain.expectedTravelTime / 60), 1),
                 meters: Int(plain.distance),
                 isRecommended: isOnlyRoute))
