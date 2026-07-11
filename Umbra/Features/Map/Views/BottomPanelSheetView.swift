@@ -77,9 +77,12 @@ struct BottomPanelSheetView: View {
                             .symbolRenderingMode(.palette)
                             .foregroundStyle(.primary, Color(.systemGray4))
                     }
+                    .buttonStyle(.plain)
                 }
             }
-            .padding(isExtended ? 20 : 0)
+            .padding(.horizontal, isExtended ? 20 : 0)
+            .padding(.top, isExtended ? 20 : 0)
+            .padding(.bottom, isExtended ? 10 : 0)
             
             if isExtended {
                 if activeSearchText.wrappedValue.isEmpty {

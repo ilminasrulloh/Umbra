@@ -29,7 +29,7 @@ struct MapView: View {
     @State var currentPresentationDetents: PresentationDetent = .fraction(0.1)
     @FocusState var clickedTextField: Field?
     
-//    let locationManager = LocationManager()
+    //    let locationManager = LocationManager()
     let routeManager = RouteManager()
     @State private var viewModel = MapViewModel()
     
@@ -79,6 +79,9 @@ struct MapView: View {
                 .background(.regularMaterial, in: Circle())
                 .shadow(color: .black.opacity(0.15), radius: 3)
         }
+        
+        .buttonStyle(.plain)
+        .padding(.bottom, 20)
     }
     
     var body: some View {
@@ -300,21 +303,44 @@ struct MapView: View {
         }
     }
     
+    //    @MapContentBuilder
+    //    private var routeOverlay: some MapContent {
+    //        if let route = viewModel.nativeRoutes.first {
+    //            MapPolyline(route.polyline)
+    //                .stroke(.yellow,
+    //                        lineWidth: selectedRouteKind == "fastest" ? 6 : 2)
+    //        }
+    //
+    //        ForEach(shadedRouteSegments, id: \.segment.id) { item in
+    //            let polyline = MapPolyline(coordinates: item.segment.coordinate)
+    //            let strokeWidth: CGFloat = selectedRouteKind == item.kind ? 6 : 2
+    //            polyline.stroke(item.segment.color, lineWidth: strokeWidth)
+    //        }
+    //    }
+    
     @MapContentBuilder
     private var routeOverlay: some MapContent {
-        if let route = viewModel.nativeRoutes.first {
+        if let route = viewModel.nativeRoutes.first, selectedRouteKind != "fastest" {
             MapPolyline(route.polyline)
-                .stroke(.yellow,
-                        lineWidth: selectedRouteKind == "fastest" ? 6 : 2)
+                .stroke(Color(.systemGray), lineWidth: 3)
         }
-
-        ForEach(shadedRouteSegments, id: \.segment.id) { item in
-            let polyline = MapPolyline(coordinates: item.segment.coordinate)
-            let strokeWidth: CGFloat = selectedRouteKind == item.kind ? 6 : 2
-            polyline.stroke(item.segment.color, lineWidth: strokeWidth)
+        
+        ForEach(shadedRouteSegments.filter { $0.kind != selectedRouteKind }, id: \.segment.id) { item in
+            MapPolyline(coordinates: item.segment.coordinate)
+                .stroke(Color(.systemGray), lineWidth: 3)
+        }
+        
+        if let route = viewModel.nativeRoutes.first, selectedRouteKind == "fastest" {
+            MapPolyline(route.polyline)
+                .stroke(.yellow, lineWidth: 6)
+        }
+        
+        ForEach(shadedRouteSegments.filter { $0.kind == selectedRouteKind }, id: \.segment.id) { item in
+            MapPolyline(coordinates: item.segment.coordinate)
+                .stroke(item.segment.color, lineWidth: 6)
         }
     }
-
+    
     /// Flatten semua shaded route jadi satu list segment + kind-nya, dengan rute yang
     /// lagi dipilih ditaruh paling akhir supaya digambar di atas (nggak ketutupan rute lain).
     private var shadedRouteSegments: [(kind: String, segment: RouteSegment)] {
@@ -342,11 +368,11 @@ private struct RouteCalloutBubble: View {
         VStack(alignment: .leading, spacing: 3) {
             Text(option.kind == "fastest" ? "Standard" : option.title)
                 .font(.system(size: 18, weight: .bold))
-    
-//            Text(option.subtitle)
-//                .font(.system(size: 12))
-//                .opacity(0.85)
-//                .lineLimit(2)
+            
+            //            Text(option.subtitle)
+            //                .font(.system(size: 12))
+            //                .opacity(0.85)
+            //                .lineLimit(2)
         }
         .frame(width: 150)
         .foregroundStyle(.white)
