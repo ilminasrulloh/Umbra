@@ -31,20 +31,28 @@ class LocationManager: NSObject, CLLocationManagerDelegate {
     }
     
     func requestUserLocation(){
-        guard CLLocationManager.locationServicesEnabled() else {
-            lastErrorMessage = "Location Services mati di level sistem. Aktifkan di Settings > Privacy & Security > Location Services."
-            return
-        }
-        
-        switch manager.authorizationStatus {
-        case .notDetermined:
-            manager.requestWhenInUseAuthorization()
-        case .authorizedWhenInUse, .authorizedAlways:
-            start()
-        case .denied, .restricted:
-            lastErrorMessage = "Izin lokasi ditolak. Buka Settings > Privacy & Security > Location Services untuk mengaktifkan izin untuk app ini."
-        @unknown default:
-            break
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let servicesEnabled = CLLocationManager.locationServicesEnabled()
+            
+            DispatchQueue.main.async {
+                guard let self else { return }
+                
+                guard servicesEnabled else {
+                    self.lastErrorMessage = "Location Services mati di level sistem. Aktifkan di Settings > Privacy & Security > Location Services."
+                    return
+                }
+                
+                switch self.manager.authorizationStatus {
+                case .notDetermined:
+                    self.manager.requestWhenInUseAuthorization()
+                case .authorizedWhenInUse, .authorizedAlways:
+                    self.start()
+                case .denied, .restricted:
+                    self.lastErrorMessage = "Izin lokasi ditolak. Buka Settings > Privacy & Security > Location Services untuk mengaktifkan izin untuk app ini."
+                @unknown default:
+                    break
+                }
+            }
         }
     }
     
