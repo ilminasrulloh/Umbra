@@ -58,9 +58,6 @@ struct DirectionsSheet: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            // Grabber + header — tetap ada secara visual sebagai penanda area drag,
-            // tapi gesture-nya sekarang dipasang di seluruh VStack di bawah (lihat
-            // .simultaneousGesture di akhir body), bukan cuma di sini.
             VStack(spacing: 0) {
                 Capsule()
                     .fill(Color(.tertiaryLabel))
@@ -75,7 +72,7 @@ struct DirectionsSheet: View {
                     Button(action: onClose) {
                         Image(systemName: "xmark")
                             .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(.black)
+                            .foregroundStyle(.primary)
                             .padding(10)
                             .background(Color(.systemGray5))
                             .clipShape(Circle())
@@ -88,10 +85,8 @@ struct DirectionsSheet: View {
             LocationInputStack(
                 originTitle: originTitle,
                 destinationTitle: destinationTitle,
-                // Origin ("My Location") sengaja belum bisa di-tap untuk saat ini —
-                // fitur ganti titik awal belum didukung. Tinggal ganti `nil` di bawah
-                // jadi `onEditOrigin` kalau nanti fiturnya sudah siap.
-                onSelectOrigin: nil,
+
+                onSelectOrigin: onEditOrigin,
                 onSelectDestination: onEditDestination
             )
             .padding(.horizontal, 18)
@@ -142,9 +137,6 @@ struct DirectionsSheet: View {
             }
     }
     
-    /// Opsi berikutnya (selain yang sedang dipilih) — dipakai untuk "mengintip"
-    /// sedikit di bawah kartu utama saat collapsed, sebagai penanda visual bahwa
-    /// masih ada opsi lain kalau panel di-swipe up.
     private var peekOption: RouteOption? {
         let primary = chosenOption ?? recommendedOption
         return options.first(where: { $0.id != primary?.id })
@@ -176,9 +168,6 @@ struct DirectionsSheet: View {
                     onStart: { onStart(chosen) }
                 )
                 
-                // Sengaja dibiarkan "kepotong" oleh .clipped() di collapsedHeight —
-                // cuma bagian atasnya yang keintip, jadi user sadar ada opsi lain
-                // di bawah kalau panel ditarik ke atas.
                 if let peek = peekOption {
                     RouteOptionsCard(
                         option: peek,
@@ -206,7 +195,7 @@ struct RouteOptionsCard: View {
     
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
                     if let icon = option.leadingIcon {
                         Image(systemName: icon)
@@ -214,17 +203,17 @@ struct RouteOptionsCard: View {
                             .foregroundStyle(.primary)
                     }
                     Text(option.kind == "fastest" ? "Standard" : option.title)
-                        .font(.system(size: 17, weight: .bold))
+                        .font(.system(size: 19, weight: .bold))
                         .foregroundStyle(.primary)
                 }
                 
                 Text(option.subtitle)
-                    .font(.system(size: 14))
+                    .font(.system(size: 15))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 
                 Text(option.durationText)
-                    .font(.system(size: 14))
+                    .font(.system(size: 15))
                     .foregroundStyle(.secondary)
                     .padding(.top, 2)
             }
@@ -233,14 +222,14 @@ struct RouteOptionsCard: View {
             
             StartButton(action: onStart)
         }
-        .padding(16)
+        .padding(18)
         .background(Color(.secondarySystemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
         )
-        .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .onTapGesture(perform: onSelect)
     }
 }
@@ -251,18 +240,16 @@ private struct StartButton: View {
     
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 4) {
-                Text("Start")
-                Image(systemName: "chevron.forward.2")
-                    .font(.system(size: 13))
-            }
-            .foregroundStyle(.white)
-            .padding(.horizontal, 18)
-            .padding(.vertical, 10)
-            .background(Color.accentColor)
-            .clipShape(Capsule())
+            Text("START")
+                .font(.system(size: 17))
+                .foregroundStyle(.white)
+                .frame(minWidth: 78)
+                .padding(.vertical, 28)
+                .background(Color.accentColor)
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
         .buttonStyle(.plain)
+        .padding(.trailing, 12)
     }
 }
 
