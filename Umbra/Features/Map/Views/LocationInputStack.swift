@@ -7,10 +7,6 @@
 
 import SwiftUI
 
-/// Origin + destination dalam satu card dengan divider di tengah.
-/// Tiap baris jadi bisa di-tap kalau closure-nya diisi (dipakai DirectionsSheet
-/// untuk buka ulang search sheet); kalau nil, baris tetap statis (dipakai di tempat
-/// yang cuma perlu menampilkan, bukan mengedit).
 struct LocationInputStack: View {
     let originTitle: String
     let destinationTitle: String
@@ -30,10 +26,12 @@ struct LocationInputStack: View {
     @ViewBuilder
     private func row(kind: LocationRow.Kind, title: String, action: (() -> Void)?) -> some View {
         if let action {
-            Button(action: action) {
-                LocationRow(kind: kind, title: title, isInteractive: true)
-            }
-            .buttonStyle(.plain)
+            LocationRow(kind: kind, title: title, isInteractive: true)
+                .contentShape(Rectangle())
+                .onTapGesture(perform: action)
+                // .onTapGesture tidak otomatis dianggap VoiceOver sebagai "button" seperti Button
+                // trait ini supaya semantik aksesibilitasnya tetap sama.
+                .accessibilityAddTraits(.isButton)
         } else {
             LocationRow(kind: kind, title: title, isInteractive: false)
         }
