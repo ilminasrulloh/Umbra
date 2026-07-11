@@ -68,6 +68,7 @@ struct LocationSuggestionView: View {
             .padding(.horizontal, 20)
             .background(Color(.systemGray6))
         }
+        .buttonStyle(.plain)
         .cornerRadius(20)
         .padding(.bottom, viewModel.results.first == result ? 8 : 4)
         .padding(.horizontal, 30)

@@ -14,7 +14,6 @@ import Combine
 @MainActor
 @Observable
 final class NavigateViewModel: NSObject {
-    
     var navigationRouteResult: RouteResult?
     var camera: MapCameraPosition = .automatic
     var currentStepIndex: Int = 0
@@ -25,6 +24,12 @@ final class NavigateViewModel: NSObject {
     
     var didArrive = false
     var isFollowingUser = true
+    
+    var currentSegments: [RouteSegment] = []
+    var currentEnv: String? = ""
+    var showToast = false
+    var toastMessage: String = ""
+    var toastIcon: String = ""
     
     var minutesOfSunAvoided: Int? {
         guard let arrivalSummary, arrivalSummary.totalLength > 0 else { return nil }
@@ -118,11 +123,12 @@ final class NavigateViewModel: NSObject {
     private(set) var selectedKind: String = "shaded"
     private let routeManager: RouteManager
     
+    private var lastEnv: String? = nil
+    
     init(routeManager: RouteManager = RouteManager()) {
         self.routeManager = routeManager
         super.init()
     }
-    
     
     // CAMERA SETTINGS
     
@@ -329,6 +335,19 @@ final class NavigateViewModel: NSObject {
         let projected = MKMapPoint(x: a.x + clampedT * dx, y: a.y + clampedT * dy)
         return point.distance(to: projected)
     }
+    
+    // UPDATE USER ENV BASED ON LOCATION
+    func updateEnvFromLocation(location: CLLocation) {
+        guard let segment = nearestSegment(to: location.coordinate) else { return }
+        
+        currentEnv = segment.environment
+        
+        if segment.environment != lastEnv {
+            handleEnvChange(to: segment.environment)
+            lastEnv = segment.environment
+        }
+    }
+    
     
     // SHADED ROUTE OPTIONS
     /// "shaded" -> 0, "shaded2" -> 1, "shaded3" -> 2, dst.
@@ -552,6 +571,44 @@ final class NavigateViewModel: NSObject {
         var result = (current + delta * factor).truncatingRemainder(dividingBy: 360)
         if result < 0 { result += 360 }
         return result
+    }
+    
+        // UPDATE USER ENV BASED ON LOCATION
+//    func updateEnvFromLocation(location: CLLoation) {
+//        guard let segment = nearestSegment(to: location.coordinate) else { return }
+//
+//        currentEnv = segment.environment
+//
+//        if segmend.environment != lastEnv {
+//            handleEnvChange(to: segment.environment)
+//            lastEnvironment = segment.environment
+//        }
+//    }
+    
+    private func nearestSegment(to coordinate: CLLocationCoordinate2D) -> RouteSegment? {
+        let userLoc = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+        return currentSegments.min(by: { seg1, seg2 in
+            let d1 = seg1.coordinate.map { CLLocation(latitude: $0.latitude, longitude: $0.longitude).distance(from: userLoc) }.min() ?? .infinity
+            let d2 = seg2.coordinate.map { CLLocation(latitude: $0.latitude, longitude: $0.longitude).distance(from: userLoc) }.min() ?? .infinity
+            return d1 < d2
+        })
+    }
+    
+    private func handleEnvChange(to environment: String) {
+        switch environment {
+        case "shaded":
+            toastMessage = "You are now in the shade"
+            toastIcon = "⛱️"
+        default:
+            return
+        }
+        
+        showToast = true
+        
+        Task {
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            withAnimation { showToast = false }
+        }
     }
 }
 

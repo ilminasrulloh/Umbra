@@ -50,6 +50,7 @@ struct NearbyLocationView: View {
             .padding(.horizontal, 20)
             .background(Color(.systemGray6))
         }
+        .buttonStyle(.plain)
         .cornerRadius(20)
 //        .padding(.bottom, 4)
         .padding(.horizontal, 30)
