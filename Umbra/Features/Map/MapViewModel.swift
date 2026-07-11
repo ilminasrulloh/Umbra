@@ -118,9 +118,9 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
     
     var routeOptions: [RouteOption] {
         var options: [RouteOption] = []
-
+        
         let plain = nativeRoutes.first
-
+        
         // Buang shaded route yang sebenarnya sama aja sama rute standard Apple Maps.
         let distinctShaded = shadedRoutes.filter { shaded in
             guard let plain else { return true }
@@ -128,22 +128,22 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
             let pointCountDiff = abs(shaded.coordinates.count - plain.polyline.pointCount)
             return !(distanceDiff < 5 && pointCountDiff < 2)
         }
-
+        
         // Maks 3 rute total (termasuk standard) → maks 2 slot shaded.
         let cappedShaded = Array(distinctShaded.prefix(2))
-
+        
         for (index, shaded) in cappedShaded.enumerated() where !shaded.coordinates.isEmpty {
             options.append(RouteOption(
                 kind: index == 0 ? "shaded" : "shaded\(index + 1)",
                 shadePercent: shaded.shadePercent,
                 subtitle: index == 0
-                    ? (shaded.shadePercent >= 40 ? "Recommended - stays mostly shaded" : "Some sunshine along the way")
-                    : "Alternative shaded route",
+                ? (shaded.shadePercent >= 40 ? "Recommended - stays mostly shaded" : "Some sunshine along the way")
+                : "Alternative shaded route",
                 minutes: max(Int(shaded.estimatedTime / 60), 1),
                 meters: Int(shaded.totalLength),
                 isRecommended: index == 0))
         }
-
+        
         if let plain {
             let isOnlyRoute = cappedShaded.isEmpty
             options.append(RouteOption(
@@ -154,7 +154,7 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
                 meters: Int(plain.distance),
                 isRecommended: isOnlyRoute))
         }
-
+        
         return options
     }
     
@@ -298,22 +298,29 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
         results = []
     }
     
-    //    func getNearbyPlaces() async {
-    //        guard let userLocation = locationManager.userLocation else { return }
-    //
-    //        let request = MKLocalSearch.Request()
-    //        request.region = MKCoordinateRegion(center: userLocation.coordinate,
-    //                                            latitudinalMeters: 100,
-    //                                            longitudinalMeters: 100)
-    //        request.pointOfInterestFilter = .includingAll
-    //
-    //        do {
-    //            let response = try await MKLocalSearch(request: request).start()
-    //            nearbyResults = response.mapItems
-    //        } catch {
-    //
-    //        }
-    //    }
+    func getNearbyPlaces() async {
+        try? await Task.sleep(nanoseconds: 1_000_000_000)
+        
+        guard let userLocation = locationManager.userLocation else { return }
+        
+        let request = MKLocalPointsOfInterestRequest(
+            center: userLocation.coordinate, radius: 1000
+        )
+        request.pointOfInterestFilter = MKPointOfInterestFilter(including: [
+                .foodMarket, .stadium,
+                .hotel, .library,
+                .school, .university,
+                .fitnessCenter, .hospital
+            ])
+//        .restaurant, .cafe, .bakery,
+        
+        do {
+            let response = try await MKLocalSearch(request: request).start()
+            nearbyResults = response.mapItems
+        } catch {
+            
+        }
+    }
     
     func sortResultsToNearest() async {
         guard let userLocation = locationManager.userLocation else { return }
@@ -405,7 +412,7 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
             return coords[coords.count / 2]
         }
     }
-
+    
     
     @MainActor
     private func legacyAppleMapsRoute(from origin: CLLocationCoordinate2D, to destination: CLLocationCoordinate2D) async {
