@@ -6,89 +6,56 @@
 //
 
 import SwiftUI
+import Combine
 
 struct WeatherAndUVIndexView: View {
     @Bindable var viewModel: MapViewModel
-    @Binding var expandUVIndexButton: Bool
-    @Binding var expandWeatherButton: Bool
+    @State var currentButtonView: String = "weather"
+    
+    private let states = ["weather", "details", "guidance"]
+    private let timer = Timer.publish(every: 5, on: .main, in: .common).autoconnect()
     
     var body: some View {
-        HStack(alignment: .top) {
-            Button(action: { expandWeatherButton.toggle() }) {
-                if expandWeatherButton {
-                    VStack(alignment: .leading) {
-                        HStack {
-                            Image(systemName: viewModel.weatherSymbolName)
-                                .padding(.trailing, 5)
-                            Text(viewModel.temperature)
-                        }
-                        Text(viewModel.feelsLike)
-                            .padding(.top, 2)
-                    }
-                    .fontWeight(.medium)
-                    .padding(.vertical, 15)
-                    .padding(.leading, 20)
-                    .padding(.trailing, 30)
-                    .background(.ultraThickMaterial)
-                    .cornerRadius(20)
-                    .padding(.leading, 20)
-                    .padding(.trailing, 10)
-                    
-                } else {
+        Group {
+            if currentButtonView == "weather" {
+                Text(viewModel.weatherText)
+                    .padding(20)
+                    .glassEffect()
+            } else if currentButtonView == "details" {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("🌡️ Feels Like **\(viewModel.feelsLike)°**")
+                    Text("☀️ UV Index: **\(viewModel.uvIndex) (\(viewModel.uvIndexText))**")
                     HStack {
-                        Image(systemName: viewModel.weatherSymbolName)
-                            .padding(.trailing, 5)
-                        Text(viewModel.temperature)
+                        Image(systemName: viewModel.weatherEmoji)
+                        Text(LocalizedStringKey(viewModel.weatherSuggestion))
+                            .multilineTextAlignment(.leading)
                     }
-                    .fontWeight(.medium)
-                    .padding(.vertical, 15)
-                    .padding(.horizontal, 20)
-                    .background(.ultraThickMaterial)
-                    .cornerRadius(25)
-                    .padding(.leading, 20)
-                    .padding(.trailing, 10)
                 }
-            }
-            
-            Button(action: { expandUVIndexButton.toggle() }) {
-                if expandUVIndexButton {
-                    VStack(alignment: .leading) {
-                        HStack {
-                            Image(systemName: "sun.min")
-                                .padding(.trailing, 5)
-                            Text("\(viewModel.uvIndex)")
-                        }
-                        Text(viewModel.uvCategory)
-                            .font(.caption)
-                            .foregroundStyle(.primary)
-                        Text("Use Sunscreen")
-                            .font(.body)
-                            .foregroundStyle(.primary)
-                    }
-                    .fontWeight(.medium)
-                    .padding(.vertical, 15)
-                    .padding(.leading, 20)
-                    .padding(.trailing, 30)
-                    .background(.ultraThickMaterial)
-                    .cornerRadius(20)
-                    .padding(.leading, 10)
-                    
-                } else {
-                    HStack {
-                        Image(systemName: "sun.min")
-                            .padding(.trailing, 5)
-                        Text("\(viewModel.uvIndex)")
-                    }
-                    .fontWeight(.medium)
-                    .padding(.vertical, 15)
-                    .padding(.horizontal, 20)
-                    .background(.ultraThickMaterial)
-                    .cornerRadius(25)
-                    .padding(.leading, 10)
+                .padding(20)
+                .glassEffect()
+            } else {
+                HStack {
+                    Text("\(viewModel.itemReminderEmoji)")
+                    Text(LocalizedStringKey(viewModel.itemReminderText))
                 }
+                .padding(20)
+                .glassEffect()
             }
         }
-        .foregroundStyle(.primary)
-        .padding(.top, 60)
+        .animation(.easeInOut, value: currentButtonView)
+        .onReceive(timer) { _ in
+            advanceState()
+        }
     }
+    
+    private func advanceState() {
+        guard let currentIndex = states.firstIndex(of: currentButtonView) else { return }
+        let nextIndex = (currentIndex + 1) % states.count
+        currentButtonView = states[nextIndex]
+    }
+}
+
+
+#Preview {
+    WeatherAndUVIndexView(viewModel: MapViewModel())
 }
