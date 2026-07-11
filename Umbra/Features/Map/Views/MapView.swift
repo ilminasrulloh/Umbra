@@ -339,22 +339,19 @@ private struct RouteCalloutBubble: View {
     var isSelected: Bool = true
     
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "chart.bar.fill")
-                .font(.footnote)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(option.kind == "fastest" ? "Standard" : option.title)
-                    .font(.body)
-                    .fontWeight(.bold)
-                Text(option.subtitle)
-                    .font(.footnote)
-                    .opacity(0.85)
-            }
-            Spacer()
+        VStack(alignment: .leading, spacing: 3) {
+            Text(option.kind == "fastest" ? "Standard" : option.title)
+                .font(.system(size: 18, weight: .bold))
+    
+//            Text(option.subtitle)
+//                .font(.system(size: 12))
+//                .opacity(0.85)
+//                .lineLimit(2)
         }
         .frame(width: 150)
         .foregroundStyle(.white)
-        .padding(14)
+        .padding(.vertical, 18)
+        .padding(.horizontal, 10)
         .background(isSelected ? Color.accentColor : Color(.systemGray))
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .shadow(color: .black.opacity(isSelected ? 0.2 : 0.08), radius: isSelected ? 8 : 3)
