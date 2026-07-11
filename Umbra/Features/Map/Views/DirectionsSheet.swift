@@ -22,14 +22,14 @@ struct DirectionsSheet: View {
     
     var collapsedHeight: CGFloat
     var expandedHeight: CGFloat
-    
-    /// X button tapped, atau drag ke bawah saat sudah collapsed.
+
+    /// X button tapped -> sheet ditutup total (hilang, bukan sekadar minimize).
     var onClose: () -> Void
-    
-    /// Drag ke atas melewati midpoint saat collapsed -> parent pindah ke expanded.
+
+    /// Drag ke atas cukup jauh (atau flick cepat ke atas) saat collapsed -> parent pindah ke expanded.
     var onExpand: () -> Void
-    
-    /// Drag ke bawah melewati midpoint saat expanded -> parent pindah ke collapsed.
+
+    /// Drag ke bawah cukup jauh (atau flick cepat ke bawah) saat expanded -> parent pindah ke collapsed.
     var onCollapse: () -> Void
     
     /// Baris origin di-tap -> parent buka lagi search sheet untuk ganti titik awal.
@@ -39,52 +39,181 @@ struct DirectionsSheet: View {
     var onEditDestination: () -> Void
     
     var onStart: (RouteOption) -> Void
-    
-    @GestureState private var dragState: CGFloat = 0
-    
-    private var baseHeight: CGFloat { isExpanded ? expandedHeight : collapsedHeight }
-    
+
+    @State private var dragTranslation: CGFloat = 0
+
+    /// Saat true, sheet tidak hilang total -> peta/rute di baliknya tetap kelihatan,
+    @State private var isMinimized: Bool = false
+
+    /// Tinggi sheet saat dalam mode minimized (bar kecil, bukan 0/hilang).
+    private let minimizedHeight: CGFloat = 85
+
+    private var baseHeight: CGFloat {
+        if isMinimized { return minimizedHeight }
+        return isExpanded ? expandedHeight : collapsedHeight
+    }
+
+    private var travelRange: CGFloat { expandedHeight - collapsedHeight }
+
     private var liveHeight: CGFloat {
-        min(max(baseHeight - dragState, collapsedHeight), expandedHeight)
+        let proposed = baseHeight - dragTranslation
+        if proposed > expandedHeight {
+            return expandedHeight + rubberBanded(proposed - expandedHeight)
+        } else if proposed < collapsedHeight {
+            return collapsedHeight - rubberBanded(collapsedHeight - proposed)
+        }
+        return proposed
     }
-    
-    private var recommendedOption: RouteOption? {
-        options.first(where: { $0.isRecommended })
-    }
-    
-    private var chosenOption: RouteOption? {
-        options.first(where: { $0.kind == selectedKind })
+
+    private func rubberBanded(_ overshoot: CGFloat) -> CGFloat {
+        let coefficient: CGFloat = 0.55
+        return (1 - 1 / ((overshoot * coefficient / travelRange) + 1)) * travelRange * 0.3
     }
     
     var body: some View {
-        VStack(spacing: 0) {
-            // Grabber + header — tetap ada secara visual sebagai penanda area drag,
-            // tapi gesture-nya sekarang dipasang di seluruh VStack di bawah (lihat
-            // .simultaneousGesture di akhir body), bukan cuma di sini.
+        Group {
+            if isMinimized {
+                minimizedBar
+            } else {
+                sheetContent
+                    .simultaneousGesture(dragGesture)
+            }
+        }
+        // Saat minimized kita pakai `minimizedHeight` langsung (bukan`liveHeight`),
+        .frame(height: isMinimized ? minimizedHeight : liveHeight, alignment: .top)
+        .clipped()
+        .background(Color(.systemBackground))
+        .contentShape(Rectangle())
+    }
+
+    /// Tampilan bar kecil saat sheet di-minimize.
+    /// Tap di mana saja pada bar ini -> sheet dibuka lagi (kembali ke collapsed).
+    private var minimizedBar: some View {
+        Button(action: restore) {
             VStack(spacing: 0) {
                 Capsule()
                     .fill(Color(.tertiaryLabel))
                     .frame(width: 36, height: 5)
                     .padding(.top, 8)
-                    .padding(.bottom, 16)
                 
-                HStack {
-                    Text("Directions")
-                        .font(.system(size: 28, weight: .bold))
-                    Spacer()
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Directions")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                        Text(destinationTitle)
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                    }
+                    
+                    Spacer(minLength: 8)
+                    
+                    // Tombol X di mode minimized, untuk yang mau menutup total.
                     Button(action: onClose) {
                         Image(systemName: "xmark")
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(.black)
-                            .padding(10)
+                            .padding(8)
                             .background(Color(.systemGray5))
                             .clipShape(Circle())
                     }
+                    .buttonStyle(.plain)
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, 20)
+                .frame(maxWidth: .infinity, minHeight: minimizedHeight)
+                .contentShape(Rectangle())
             }
-            
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Keluar dari mode minimized, sheet kembali muncul penuh (collapsed).
+    private func restore() {
+        withAnimation(sheetSpring) {
+            isMinimized = false
+        }
+    }
+
+    private var sheetContent: some View {
+        DirectionsSheetContent(
+            originTitle: originTitle,
+            destinationTitle: destinationTitle,
+            selectedKind: selectedKind,
+            options: options,
+            onSelectOption: onSelectOption,
+            showLegend: showLegend,
+            onClose: onClose,
+            onEditDestination: onEditDestination,
+            onStart: onStart
+        )
+        .drawingGroup()
+    }
+
+    private var dragGesture: some Gesture {
+        DragGesture(minimumDistance: 4, coordinateSpace: .global)
+            .onChanged { value in
+                dragTranslation = value.translation.height
+            }
+            .onEnded(handleDragEnd)
+    }
+
+    private func handleDragEnd(_ value: DragGesture.Value) {
+        let translation = value.translation.height
+        let velocity = value.velocity.height
+        let distanceThreshold = travelRange * 0.3
+        let flickVelocity: CGFloat = 700
+
+        let draggedUpEnough = translation < -distanceThreshold || velocity < -flickVelocity
+        let draggedDownEnough = translation > distanceThreshold || velocity > flickVelocity
+
+        withAnimation(sheetSpring) {
+            if !isExpanded && draggedUpEnough {
+                onExpand()
+            } else if isExpanded && draggedDownEnough {
+                onCollapse()
+            } else if !isExpanded && draggedDownEnough {
+                isMinimized = true
+            }
+            dragTranslation = 0
+        }
+    }
+
+    private let sheetSpring: Animation = .spring(response: 0.38, dampingFraction: 0.9)
+}
+
+// MARK: - Directions sheet content (diisolasi dari state drag)
+
+private struct DirectionsSheetContent: View {
+    let originTitle: String
+    let destinationTitle: String
+    let selectedKind: String
+    let options: [RouteOption]
+    var onSelectOption: (RouteOption) -> Void
+    let showLegend: Bool
+    var onClose: () -> Void
+    var onEditDestination: () -> Void
+    var onStart: (RouteOption) -> Void
+
+    private var recommendedOption: RouteOption? {
+        options.first(where: { $0.isRecommended })
+    }
+
+    private var chosenOption: RouteOption? {
+        options.first(where: { $0.kind == selectedKind })
+    }
+
+    private var orderedOptions: [RouteOption] {
+        guard let primary = chosenOption ?? recommendedOption else { return options }
+        let rest = options.filter { $0.id != primary.id }
+        return [primary] + rest
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+
             LocationInputStack(
                 originTitle: originTitle,
                 destinationTitle: destinationTitle,
@@ -106,92 +235,51 @@ struct DirectionsSheet: View {
             
             routeOptionsSection
         }
-        .frame(height: liveHeight, alignment: .top)
-        .clipped()
-        .background(Color(.systemBackground))
-        .contentShape(Rectangle())
-        // simultaneousGesture (bukan .gesture biasa) supaya drag ini tetap jalan
-        // berbarengan dengan gesture bawaan ScrollView & Button di dalam panel —
-        // tap tombol/kartu tetap berfungsi normal, scroll list rute (saat expanded)
-        // juga tetap jalan.
-        .simultaneousGesture(dragGesture)
     }
-    
-    private var dragGesture: some Gesture {
-        DragGesture(minimumDistance: 4, coordinateSpace: .local)
-            .updating($dragState) { value, state, _ in
-                let raw = value.translation.height
-                let deadZone: CGFloat = 4
-                state = abs(raw) < deadZone ? 0 : (raw > 0 ? raw - deadZone : raw + deadZone)
-            }
-            .onEnded { value in
-                let translation = value.translation.height
-                let threshold: CGFloat = 60 // jarak menarik minimum biar dianggap sengaja
-                
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.9)) {
-                    if translation < -threshold {
-                        if !isExpanded { onExpand() }
-                    } else if translation > threshold {
-                        if isExpanded {
-                            onCollapse()
-                        } else {
-                            onClose()
-                        }
-                    }
+
+    private var header: some View {
+        VStack(spacing: 0) {
+            Capsule()
+                .fill(Color(.tertiaryLabel))
+                .frame(width: 36, height: 5)
+                .padding(.top, 8)
+                .padding(.bottom, 16)
+
+            HStack {
+                Text("Directions")
+                    .font(.system(size: 28, weight: .bold))
+                Spacer()
+                Button(action: onClose) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.black)
+                        .padding(10)
+                        .background(Color(.systemGray5))
+                        .clipShape(Circle())
                 }
             }
-    }
-    
-    /// Opsi berikutnya (selain yang sedang dipilih) — dipakai untuk "mengintip"
-    /// sedikit di bawah kartu utama saat collapsed, sebagai penanda visual bahwa
-    /// masih ada opsi lain kalau panel di-swipe up.
-    private var peekOption: RouteOption? {
-        let primary = chosenOption ?? recommendedOption
-        return options.first(where: { $0.id != primary?.id })
+            .padding(.horizontal, 20)
+            .padding(.bottom, 20)
+        }
     }
     
     @ViewBuilder
     private var routeOptionsSection: some View {
-        if isExpanded {
-            ScrollView {
-                VStack(spacing: 14) {
-                    ForEach(options) { option in
-                        RouteOptionsCard(
-                            option: option,
-                            isSelected: option.kind == selectedKind,
-                            onSelect: { onSelectOption(option) },
-                            onStart: { onStart(option) }
-                        )
-                    }
-                }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 20)
-            }
-        } else if let chosen = chosenOption ?? recommendedOption {
+        if orderedOptions.isEmpty {
+            Spacer(minLength: 12)
+        } else {
             VStack(spacing: 14) {
-                RouteOptionsCard(
-                    option: chosen,
-                    isSelected: true,
-                    onSelect: { onSelectOption(chosen) },
-                    onStart: { onStart(chosen) }
-                )
-                
-                // Sengaja dibiarkan "kepotong" oleh .clipped() di collapsedHeight —
-                // cuma bagian atasnya yang keintip, jadi user sadar ada opsi lain
-                // di bawah kalau panel ditarik ke atas.
-                if let peek = peekOption {
+                ForEach(orderedOptions) { option in
                     RouteOptionsCard(
-                        option: peek,
-                        isSelected: false,
-                        onSelect: { onSelectOption(peek) },
-                        onStart: { onStart(peek) }
+                        option: option,
+                        isSelected: option.kind == selectedKind,
+                        onSelect: { onSelectOption(option) },
+                        onStart: { onStart(option) }
                     )
                 }
             }
             .padding(.horizontal, 20)
             .padding(.bottom, 20)
-        } else {
-            Spacer(minLength: 12)
         }
     }
 }
@@ -253,14 +341,16 @@ private struct StartButton: View {
         Button(action: action) {
             HStack(spacing: 4) {
                 Text("Start")
-                Image(systemName: "chevron.forward.2")
-                    .font(.system(size: 13))
+//                Image(systemName: "chevron.forward.2")
+//                    .font(.system(size: 13))
             }
+            .frame(height: 40)
             .foregroundStyle(.white)
             .padding(.horizontal, 18)
             .padding(.vertical, 10)
             .background(Color.accentColor)
-            .clipShape(Capsule())
+            .cornerRadius(15)
+            //.clipShape(Capsule())
         }
         .buttonStyle(.plain)
     }
