@@ -89,6 +89,6 @@ struct WeatherAndUVIndexView: View {
             }
         }
         .foregroundStyle(.primary)
-        .padding(.top, 55)
+        .padding(.top, 60)
     }
 }

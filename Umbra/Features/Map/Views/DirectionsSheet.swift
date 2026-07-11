@@ -13,13 +13,13 @@ struct DirectionsSheet: View {
     let originTitle: String
     let destinationTitle: String
     var selectedKind: String
-
+    
     let options: [RouteOption]
     var onSelectOption: (RouteOption) -> Void
-
+    
     var showLegend: Bool = false
     var isExpanded: Bool
-
+    
     var collapsedHeight: CGFloat
     var expandedHeight: CGFloat
 
@@ -31,13 +31,13 @@ struct DirectionsSheet: View {
 
     /// Drag ke bawah cukup jauh (atau flick cepat ke bawah) saat expanded -> parent pindah ke collapsed.
     var onCollapse: () -> Void
-
+    
     /// Baris origin di-tap -> parent buka lagi search sheet untuk ganti titik awal.
     var onEditOrigin: () -> Void
-
+    
     /// Baris destination di-tap -> parent buka lagi search sheet untuk ganti tujuan.
     var onEditDestination: () -> Void
-
+    
     var onStart: (RouteOption) -> Void
 
     @State private var dragTranslation: CGFloat = 0
@@ -69,7 +69,7 @@ struct DirectionsSheet: View {
         let coefficient: CGFloat = 0.55
         return (1 - 1 / ((overshoot * coefficient / travelRange) + 1)) * travelRange * 0.3
     }
-
+    
     var body: some View {
         Group {
             if isMinimized {
@@ -225,14 +225,14 @@ private struct DirectionsSheetContent: View {
             )
             .padding(.horizontal, 18)
             .padding(.bottom, 1)
-
+            
             if showLegend {
                 RouteLegendView()
                     .padding(.horizontal, 20)
                     .padding(.top, 20)
                     .padding(.bottom, 20)
             }
-
+            
             routeOptionsSection
         }
     }
@@ -262,7 +262,7 @@ private struct DirectionsSheetContent: View {
             .padding(.bottom, 20)
         }
     }
-
+    
     @ViewBuilder
     private var routeOptionsSection: some View {
         if orderedOptions.isEmpty {
@@ -291,7 +291,7 @@ struct RouteOptionsCard: View {
     var isSelected: Bool = false
     var onSelect: () -> Void = {}
     var onStart: () -> Void
-
+    
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
@@ -301,24 +301,24 @@ struct RouteOptionsCard: View {
                             .font(.subheadline)
                             .foregroundStyle(.primary)
                     }
-                    Text(option.title)
+                    Text(option.kind == "fastest" ? "Standard" : option.title)
                         .font(.system(size: 17, weight: .bold))
                         .foregroundStyle(.primary)
                 }
-
+                
                 Text(option.subtitle)
                     .font(.system(size: 14))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-
+                
                 Text(option.durationText)
                     .font(.system(size: 14))
                     .foregroundStyle(.secondary)
                     .padding(.top, 2)
             }
-
+            
             Spacer(minLength: 8)
-
+            
             StartButton(action: onStart)
         }
         .padding(16)
@@ -336,7 +336,7 @@ struct RouteOptionsCard: View {
 /// Tombol "Start" di dalam RouteOptionsCard.
 private struct StartButton: View {
     var action: () -> Void
-
+    
     var body: some View {
         Button(action: action) {
             HStack(spacing: 4) {

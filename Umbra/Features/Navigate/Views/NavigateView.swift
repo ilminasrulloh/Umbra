@@ -180,7 +180,7 @@ struct NavigateView: View {
             Map(position: $viewModel.camera) {
                 userAnnotation
                 
-                if let shaded = viewModel.shadedRouteResult, !shaded.coordinates.isEmpty {
+                if let shaded = viewModel.navigationRouteResult, !shaded.coordinates.isEmpty {
                     MapPolyline(coordinates: shaded.coordinates)
                         .stroke(.blue, lineWidth: 6)
                 }

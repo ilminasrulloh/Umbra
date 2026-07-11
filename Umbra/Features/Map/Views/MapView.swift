@@ -29,7 +29,8 @@ struct MapView: View {
     @State var currentPresentationDetents: PresentationDetent = .fraction(0.1)
     @FocusState var clickedTextField: Field?
     
-    let locationManager = LocationManager()
+//    let locationManager = LocationManager()
+    let routeManager = RouteManager()
     @State private var viewModel = MapViewModel()
     
     @State private var selectedRouteKind = "shaded"
@@ -59,7 +60,7 @@ struct MapView: View {
     }
     
     private var coneRotationDegrees: Double? {
-        guard let heading = locationManager.heading, heading.headingAccuracy >= 0 else { return nil }
+        guard let heading = viewModel.locationManager.heading, heading.headingAccuracy >= 0 else { return nil }
         let value = heading.trueHeading >= 0 ? heading.trueHeading : heading.magneticHeading
         return value
     }
@@ -84,7 +85,7 @@ struct MapView: View {
         GeometryReader { geo in
             ZStack(alignment: .bottom) {
                 Map(position: $viewModel.userCurrentPosition) {
-                    if let userCoordinate = locationManager.userLocation?.coordinate {
+                    if let userCoordinate = viewModel.locationManager.userLocation?.coordinate {
                         Annotation("", coordinate: userCoordinate) {
                             UserLocationIndicator(headingDegrees: coneRotationDegrees)
                         }
@@ -161,7 +162,7 @@ struct MapView: View {
                             }
                             guard let destinationCoordinate = resolvedDestination?.coordinate else { return }
                             Task {
-                                await viewModel.calculateShadedWalkingRoute(to: destinationCoordinate)
+                                await viewModel.calculateShadedRoute(to: destinationCoordinate)
                                 await viewModel.calculateWalkingRoute(to: destinationCoordinate)
                             }
                         }
@@ -179,11 +180,6 @@ struct MapView: View {
                     )
                 }
                 
-                // Recenter button — sengaja jadi child ZStack biasa (BUKAN .overlay()),
-                // dan dideklarasikan SEBELUM blok DirectionsSheet di bawah. Di ZStack,
-                // child yang belakangan digambar di ATAS child yang duluan — jadi begitu
-                // DirectionsSheet muncul/di-drag naik dan tingginya melewati posisi
-                // tombol ini, DirectionsSheet otomatis menutupinya.
                 VStack {
                     Spacer()
                     HStack {
@@ -226,8 +222,8 @@ struct MapView: View {
                                         resolvedDestination = nil
                                         resolvedOrigin = nil
                                         editingField = .destination
-                                        viewModel.calculatedRoutes = []
-                                        viewModel.shadedRoute = nil
+                                        viewModel.nativeRoutes = []
+                                        viewModel.shadedRoutes = []
                                         viewModel.userDestinationText = ""
                                     }
                                 }
@@ -295,8 +291,8 @@ struct MapView: View {
                         resolvedDestination = nil
                         resolvedOrigin = nil
                         editingField = .destination
-                        viewModel.calculatedRoutes = []
-                        viewModel.shadedRoute = nil
+                        viewModel.nativeRoutes = []
+                        viewModel.shadedRoutes = []
                         viewModel.userDestinationText = ""
                     }
                 }
@@ -306,21 +302,28 @@ struct MapView: View {
     
     @MapContentBuilder
     private var routeOverlay: some MapContent {
-        if let route = viewModel.calculatedRoutes.first {
+        if let route = viewModel.nativeRoutes.first {
             MapPolyline(route.polyline)
                 .stroke(.yellow,
                         lineWidth: selectedRouteKind == "fastest" ? 6 : 2)
         }
-        
-        if let route = viewModel.shadedRoute, !route.coordinates.isEmpty {
-            ForEach(route.segments) { segment in
-                
-                let polyline = MapPolyline(coordinates: segment.coordinate)
-                let strokeWidth: CGFloat = selectedRouteKind == "shaded" ? 6 : 2
-                
-                polyline.stroke(segment.color, lineWidth: strokeWidth)
-            }
+
+        ForEach(shadedRouteSegments, id: \.segment.id) { item in
+            let polyline = MapPolyline(coordinates: item.segment.coordinate)
+            let strokeWidth: CGFloat = selectedRouteKind == item.kind ? 6 : 2
+            polyline.stroke(item.segment.color, lineWidth: strokeWidth)
         }
+    }
+
+    /// Flatten semua shaded route jadi satu list segment + kind-nya, dengan rute yang
+    /// lagi dipilih ditaruh paling akhir supaya digambar di atas (nggak ketutupan rute lain).
+    private var shadedRouteSegments: [(kind: String, segment: RouteSegment)] {
+        let all = viewModel.shadedRoutes.enumerated().flatMap { index, route -> [(kind: String, segment: RouteSegment)] in
+            guard !route.coordinates.isEmpty else { return [] }
+            let kind = index == 0 ? "shaded" : "shaded\(index + 1)"
+            return route.segments.map { (kind, $0) }
+        }
+        return all.sorted { ($0.kind == selectedRouteKind ? 1 : 0) < ($1.kind == selectedRouteKind ? 1 : 0) }
     }
     
     private var orderedRouteOptions: [RouteOption] {
@@ -340,7 +343,7 @@ private struct RouteCalloutBubble: View {
             Image(systemName: "chart.bar.fill")
                 .font(.footnote)
             VStack(alignment: .leading, spacing: 2) {
-                Text(option.title)
+                Text(option.kind == "fastest" ? "Standard" : option.title)
                     .font(.body)
                     .fontWeight(.bold)
                 Text(option.subtitle)
