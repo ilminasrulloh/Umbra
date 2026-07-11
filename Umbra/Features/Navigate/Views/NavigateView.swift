@@ -180,12 +180,20 @@ struct NavigateView: View {
             Map(position: $viewModel.camera) {
                 userAnnotation
                 
-                if let shaded = viewModel.navigationRouteResult, !shaded.coordinates.isEmpty {
-                    MapPolyline(coordinates: shaded.coordinates)
-                        .stroke(.blue, lineWidth: 6)
+                if let route = viewModel.navigationRouteResult, !route.coordinates.isEmpty {
+                    if viewModel.selectedKind != "fastest", !route.segments.isEmpty {
+                        ForEach(route.segments) { segment in
+                            MapPolyline(coordinates: segment.coordinate)
+                                .stroke(segment.color, lineWidth: 6)
+                        }
+                    } else {
+                        MapPolyline(coordinates: route.coordinates)
+                            .stroke(.blue, lineWidth: 6)
+                    }
                 }
                 
                 destinationMarker
+                
             }
             .mapControls {
                 MapCompass()

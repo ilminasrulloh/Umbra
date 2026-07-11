@@ -488,7 +488,6 @@ final class NavigateViewModel: NSObject {
             
             
             if current.distanceFromStart - last.distanceFromStart < threshold {
-                print("x")
                 merged[merged.count-1] = (
                     instruction: last.instruction,
                     coordinate: last.coordinate,
