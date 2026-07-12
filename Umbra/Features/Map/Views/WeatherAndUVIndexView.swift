@@ -20,7 +20,7 @@ struct WeatherAndUVIndexView: View {
                     .font(.footnote)
                     .foregroundStyle(.primary)
                     .padding(.leading, 25)
-                    .padding(.trailing, 15)
+                    .padding(.trailing, 16)
                     .padding(.vertical, 10)
                 
                 Button(action: {
