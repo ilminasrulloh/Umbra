@@ -12,25 +12,31 @@ import Combine
 struct SunPositionView: View {
     
     // MARK: - Konfigurasi
-    // Semua properti di bawah punya nilai default, jadi saat dipanggil dari
-    // MapView cukup isi `screenWidth` saja — sisanya boleh dikosongkan.
     
     /// Lebar area/layar yang tersedia. Dipakai untuk menghitung seberapa jauh
     /// matahari boleh bergeser ke kanan (wajib diisi, tidak ada default,
     /// karena setiap layar device beda-beda lebarnya).
     let screenWidth: CGFloat
     
-    /// Jam mulai matahari bergerak. Default: jam 10 pagi.
-    var startHour: Int = 10
+    /// Jam mulai matahari bergerak
+    var startHour: Int = 06
     
-    /// Jam matahari berhenti bergerak (sudah sampai ujung kanan). Default: jam 2 siang.
-    var endHour: Int = 14
+    /// Jam matahari berhenti bergerak (sudah sampai ujung kanan)
+    var endHour: Int = 18
     
     /// Lebar gambar matahari.
     var imageWidth: CGFloat = 300
     
+    /// Offset vertikal (dalam point) untuk menggeser posisi matahari naik/turun.
+    var verticalOffset: CGFloat = -100
+    
+    /// Seberapa banyak bagian matahari (dalam point) yang tetap kelihatan di tepi
+    /// layar saat posisi ekstrem — sebelum `startHour` dan setelah `endHour`
+    /// Semakin kecil angkanya, semakin "ngumpet" mataharinya di ujung layar.
+    var edgePeekWidth: CGFloat = 100
+    
     /// Nama asset gambar matahari di Assets.xcassets.
-    var imageName: String = "sun-image"
+    var imageName: String = "sun-center"
     
     /// Waktu "sekarang" yang disimpan di state, supaya body bisa re-render
     /// tiap kali waktunya berubah (di-update oleh sunTimer di bawah).
@@ -47,7 +53,7 @@ struct SunPositionView: View {
             .resizable()
             .aspectRatio(contentMode: .fit)
             .frame(width: imageWidth)
-            .offset(x: xOffset)
+            .offset(x: xOffset, y: verticalOffset)
             // Animasi halus supaya perpindahannya nggak "loncat" tiba-tiba
             .animation(.easeInOut(duration: 1), value: sunProgress)
             // Setiap sunTimer "berbunyi" (tiap 60 detik), update currentTime.
@@ -78,11 +84,16 @@ struct SunPositionView: View {
         return CGFloat(elapsed / totalDuration)
     }
     
-    /// Jarak geser horizontal (dalam point), hasil dari sunProgress dikali
-    /// jarak maksimum yang boleh ditempuh matahari.
+    /// Jarak geser horizontal (dalam point)
     private var xOffset: CGFloat {
-        let maxOffset = max(screenWidth - imageWidth, 0)
-        return sunProgress * maxOffset
+        // posisi "terbit": nongol dikit dari kiri
+        let startX = -imageWidth + edgePeekWidth
+        
+        // posisi "terbenam": nongol dikit dari kanan
+        let endX = screenWidth - edgePeekWidth
+        
+        let travelDistance = endX - startX
+        return startX + (sunProgress * travelDistance)
     }
 }
 
