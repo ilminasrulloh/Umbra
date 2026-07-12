@@ -61,16 +61,16 @@ struct NavigateView: View {
             topOverlayArea
                 .padding(.top, 8)
             
-            // MARK: Tombol recenter — kiri bawah, tepat di atas card bawah
+            // MARK: Tombol recenter — digedein & digeser lebih ke tengah, tepat di atas card bawah
             VStack {
                 Spacer()
                 HStack {
                     recenterButton
-                        .padding(.leading, 16)
+                        .padding(.leading, 28)
                     Spacer()
                 }
             }
-            .padding(.bottom, 130)
+            .padding(.bottom, 140)
             
             // MARK: Area bawah — panel "menyiapkan navigasi" (idle) atau summary card (saat navigasi)
             VStack {
@@ -84,10 +84,6 @@ struct NavigateView: View {
                             viewModel.stopNavigation()
                             selectedDestination = nil
                             dismiss()
-                        },
-                        onShowDetails: {
-                            loadAddressesIfNeeded()
-                            showDetailsSheet = true
                         }
                     )
                 } else {
@@ -287,11 +283,11 @@ struct NavigateView: View {
             )
         } label: {
             Image(systemName: "location.fill")
-                .font(.system(size: 16, weight: .semibold))
+                .font(.system(size: 22, weight: .semibold))
                 .foregroundStyle(.blue)
-                .padding(12)
+                .padding(16)
                 .background(.regularMaterial, in: Circle())
-                .shadow(color: .black.opacity(0.15), radius: 3)
+                .shadow(color: .black.opacity(0.15), radius: 4)
         }
     }
     
@@ -398,7 +394,11 @@ struct NavigateView: View {
                 steps: viewModel.activeSteps,
                 selectedIndex: $selectedStepIndex,
                 activeStepIndex: viewModel.currentStepIndex,
-                liveDistanceToActiveStep: viewModel.distanceToNextStep
+                liveDistanceToActiveStep: viewModel.distanceToNextStep,
+                onTap: {
+                    loadAddressesIfNeeded()
+                    showDetailsSheet = true
+                }
             )
         }
     }
@@ -480,4 +480,3 @@ struct NavigateView: View {
         destinationTitle: "Raynor Park"
     )
 }
-
