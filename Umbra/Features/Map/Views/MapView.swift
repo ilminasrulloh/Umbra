@@ -27,9 +27,10 @@ struct MapView: View {
     @State var currentPresentationDetents: PresentationDetent = .fraction(0.1)
     @FocusState var clickedTextField: Field?
     
-    //    let locationManager = LocationManager()
-    let routeManager = RouteManager()
     @State private var viewModel = MapViewModel()
+    
+    /// penghubung antara Map dan MapCompass
+    @Namespace private var mapScope
     
     @State private var selectedRouteKind = "shaded"
     @State private var directionsSheetState: DirectionsSheetState = .hidden
@@ -77,15 +78,22 @@ struct MapView: View {
                 .background(.regularMaterial, in: Circle())
                 .shadow(color: .black.opacity(0.15), radius: 3)
         }
-        
         .buttonStyle(.plain)
         .padding(.bottom, 20)
+        .padding(.leading, 10)
+    }
+    
+    // Tombol Compass untuk mengembalikan arah ke utara
+    private var compassButton: some View {
+        MapCompass(scope: mapScope)
+            .mapControlVisibility(.visible)
+            .padding(.leading, 28)
     }
     
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .bottom) {
-                Map(position: $viewModel.userCurrentPosition) {
+                Map(position: $viewModel.userCurrentPosition, scope: mapScope) {
                     if let userCoordinate = viewModel.locationManager.userLocation?.coordinate {
                         Annotation("", coordinate: userCoordinate) {
                             UserLocationIndicator(headingDegrees: coneRotationDegrees)
@@ -125,6 +133,9 @@ struct MapView: View {
                     }
                 }
                 .ignoresSafeArea()
+                
+                .mapControls{}
+                
                 // Deteksi perubahan zoom level peta secara kontinu
                 .onMapCameraChange(frequency: .continuous) { context in
                     cameraDistance = context.camera.distance
@@ -173,6 +184,14 @@ struct MapView: View {
                     .presentationDragIndicator(.visible)
                     .presentationBackgroundInteraction(.enabled)
                 }
+                
+                .overlay(alignment: .topLeading) {
+                    VStack {
+                        // Menampilkan matahari sesuai jam
+                        SunPositionView(screenWidth: geo.size.width)
+                    }
+                }
+                
                 .overlay(alignment: .topLeading) {
                     WeatherAndUVIndexView(
                         viewModel: viewModel
@@ -182,7 +201,11 @@ struct MapView: View {
                 }
                 
                 VStack {
-                    Spacer()
+                    HStack {
+                        compassButton
+                            .padding(.bottom, 5)
+                        Spacer()
+                    }
                     HStack {
                         recenterButton
                             .padding(.leading, 20)
@@ -194,6 +217,17 @@ struct MapView: View {
                             )
                         
                         Spacer()
+                        
+                        Text("🌡️ **\(viewModel.feelsLike)°**")
+                            .padding(5)
+                            .background(.regularMaterial, in: .capsule)
+                            .padding(.trailing, 30)
+                            .padding(
+                                .bottom,
+                                directionsSheetState != .hidden
+                                ? collapsedSheetHeight + 16
+                                : geo.size.height * 0.1 + 26
+                            )
                     }
                 }
                 
@@ -273,6 +307,10 @@ struct MapView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
+            
+            // untuk membuat ID maps agar terbaca oleh compass
+            .mapScope(mapScope)
+            
             .ignoresSafeArea()
         }
         .fullScreenCover(item: $navigateDestination) { destination in
@@ -282,9 +320,6 @@ struct MapView: View {
                 destinationTitle: destination.title,
                 selectedRouteKind: selectedRouteKind,
                 onArrivalDismissed: {
-                    // Sama seperti reset di onClose DirectionsSheet — supaya begitu
-                    // kembali dari NavigateView, MapView bersih lagi (cuma lokasi
-                    // user terkini), tidak ada sisa rute/marker/destinasi lama.
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.9)) {
                         directionsSheetState = .hidden
                         currentPresentationDetents = .fraction(0.1)
