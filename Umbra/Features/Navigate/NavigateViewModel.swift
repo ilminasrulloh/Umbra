@@ -7,7 +7,7 @@
 
 import Foundation
 import SwiftUI
-import _MapKit_SwiftUI
+//import _MapKit_SwiftUI
 import MapKit
 import Combine
 
@@ -46,11 +46,37 @@ final class NavigateViewModel: NSObject {
             result.append(NavigationStep(
                 instructions: maneuver.instruction,
                 distance: segmentLength,
-                coordinate: maneuver.coordinate
+                coordinate: maneuver.coordinate,
+                entranceImageName: entranceImageName(for: maneuver)
             ))
             previousDistance = maneuver.distanceFromStart
         }
         return result
+    }
+
+    private let buildingEntranceImages: [String: String] = [:]
+
+    /// nodeId gedung yang SUDAH punya foto dummy ("entranceDummy"). Cara isinya:
+    /// 1. Jalankan app di device/simulator, mulai navigasi ke rute yang lewat gedung itu.
+    /// 2. Lihat console — cari log "🚪 Enter the Building — nodeId: ..." (dicetak dari
+    ///    `buildManeuvers`), catat nodeId yang muncul.
+    /// 3. Tempel nodeId itu ke Set di bawah ini. Ulangi untuk tiap rute/gedung yang mau
+    ///    dikasih foto dummy dulu, sisanya (belum ada di Set) tidak akan menampilkan foto.
+    private let nodeIdsWithDummyEntranceImage: Set<String> = []
+
+    private let dummyEntranceImageName: String? = "entranceDummy"
+
+    private func entranceImageName(
+        for maneuver: (instruction: String, coordinate: CLLocationCoordinate2D, distanceFromStart: CLLocationDistance, nodeId: String?)
+    ) -> String? {
+        guard let nodeId = maneuver.nodeId else { return nil }
+        if let mapped = buildingEntranceImages[nodeId] {
+            return mapped
+        }
+        if maneuver.instruction == "Enter the Building", nodeIdsWithDummyEntranceImage.contains(nodeId) {
+            return dummyEntranceImageName
+        }
+        return nil
     }
     
     var remainingDistance: CLLocationDistance {
@@ -460,6 +486,9 @@ final class NavigateViewModel: NSObject {
             if !isCurrentlyInside && indoor {
                 maneuvers.append((instruction: "Enter the Building", coordinate: coord, distanceFromStart: dist, nodeId: currentNodeId))
                 isCurrentlyInside = true
+                #if DEBUG
+                print("🚪 Enter the Building — nodeId: \(currentNodeId), coord: \(coord.latitude), \(coord.longitude)")
+                #endif
             } else if isCurrentlyInside && indoor {
                 maneuvers.append((instruction: "Walk inside the Building", coordinate: coord, distanceFromStart: dist, nodeId: currentNodeId))
             } else if isCurrentlyInside && !indoor {

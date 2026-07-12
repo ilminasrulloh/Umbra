@@ -15,4 +15,7 @@ struct NavigationStep: Identifiable {
     /// Titik koordinat maneuver ini — dipakai untuk memindahkan kamera saat
     /// carousel instruksi digeser ke step ini (lihat `NavigateViewModel.previewStep`).
     let coordinate: CLLocationCoordinate2D
+    /// Nama asset foto entrance gedung untuk step ini (mis. step "Enter the Building").
+    /// `nil` kalau step ini tidak punya foto entrance terkait.
+    var entranceImageName: String? = nil
 }
