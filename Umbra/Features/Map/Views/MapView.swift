@@ -114,23 +114,7 @@ struct MapView: View {
                             .tint(.green)
                     }
                     
-                    ForEach(orderedRouteOptions, id: \.kind) { option in
-                        if let coordinate = viewModel.midpointCoordinate(for: option.kind) {
-                            Annotation("", coordinate: coordinate, anchor: .top) {
-                                RouteCalloutBubble(option: option, isSelected: option.kind == selectedRouteKind)
-                                // UBAH NILAI 0.4 MENJADI 0.75 ATAU 0.8 DI SINI
-                                    .scaleEffect(max(0.75, min(1.0, 3000 / cameraDistance)))
-                                    .animation(.interactiveSpring, value: cameraDistance)
-                                    .onTapGesture {
-                                        withAnimation(.spring(duration: 0.3)) {
-                                            selectedRouteKind = option.kind
-                                        }
-                                    }
-                            }
-                            
-                            .annotationTitles(.hidden)
-                        }
-                    }
+                    routeCalloutAnnotations
                 }
                 .ignoresSafeArea()
                 
@@ -192,7 +176,7 @@ struct MapView: View {
                     }
                 }
                 
-                .overlay(alignment: .topLeading) {
+                .overlay(alignment: .top) {
                     WeatherAndUVIndexView(
                         viewModel: viewModel
                     )
@@ -372,6 +356,25 @@ struct MapView: View {
         ForEach(shadedRouteSegments.filter { $0.kind == selectedRouteKind }, id: \.segment.id) { item in
             MapPolyline(coordinates: item.segment.coordinate)
                 .stroke(item.segment.color, lineWidth: 6)
+        }
+    }
+    
+    @MapContentBuilder
+    private var routeCalloutAnnotations: some MapContent {
+        ForEach(orderedRouteOptions, id: \.kind) { option in
+            if let coordinate = viewModel.midpointCoordinate(for: option.kind) {
+                Annotation("", coordinate: coordinate, anchor: .top) {
+                    RouteCalloutBubble(option: option, isSelected: option.kind == selectedRouteKind)
+                        .scaleEffect(max(0.75, min(1.0, 3000 / cameraDistance)))
+                        .animation(.interactiveSpring, value: cameraDistance)
+                        .onTapGesture {
+                            withAnimation(.spring(duration: 0.3)) {
+                                selectedRouteKind = option.kind
+                            }
+                        }
+                }
+                .annotationTitles(.hidden)
+            }
         }
     }
     
