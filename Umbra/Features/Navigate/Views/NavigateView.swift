@@ -476,8 +476,8 @@ struct NavigateView: View {
 #Preview {
     NavigateView(
         locationManager: LocationManager(),
-        destination: CLLocationCoordinate2D(latitude: -6.1754, longitude: 106.8272),
-        destinationTitle: "Monas"
+        destination: CLLocationCoordinate2D(latitude: 37.34415239696823, longitude: -122.00660097320561),
+        destinationTitle: "Raynor Park"
     )
 }
 
