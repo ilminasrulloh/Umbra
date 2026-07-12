@@ -103,8 +103,8 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
     var feelsLike: Int = 32
     var weatherEmoji: String = "sun.max"
     
-    var weatherText: String = "⚠️ Scorching hot out there! 🥵"
-    var weatherSuggestion: String = "Pick **Recommended Route** for the Best Sun Protection"
+    var weatherText: String = "Scorching hot out there! 🥵"
+    var weatherSuggestion: String = "Why sweat it? Pick our **Recommended Route** for the breeziest, most **comfortable walk**."
     var uvIndexText: String = "High"
     var itemReminderText: String = "Don't forget your **sunscreen** and a handy **umbrella**!"
     var itemReminderEmoji: String = "⛱️"
@@ -405,17 +405,17 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
     
     func updateWeatherValue(){
         if self.temperature >= 30 {
-            self.weatherText = "⚠️ Scorching hot out there! 🥵"
-            self.weatherSuggestion = "Pick **Recommended Route** for the Best Sun Protection"
+            self.weatherText = "Scorching hot out there! 🥵"
+            self.weatherSuggestion = "Why sweat it? Pick our **Recommended Route** for the breeziest, most **comfortable walk**."
             self.itemReminderText = "Don't forget your **sunscreen** and a handy **umbrella**!"
             self.itemReminderEmoji = "⛱️"
         } else if self.temperature <= 18 {
-            self.weatherText = "🍂 It's kinda cold today! 🫨"
+            self.weatherText = "It's kinda cold today! 🫨"
             self.weatherSuggestion = "**Any routes** are fine today!"
             self.itemReminderText = "Dress **warmly** and bring your **umbrella**!"
             self.itemReminderEmoji = "🧥"
         } else {
-            self.weatherText = "☺️ The weather is nice today!"
+            self.weatherText = "The weather is nice today! ☺️"
             self.weatherSuggestion = "Pick **Recommended Route** for more Comfort"
             self.itemReminderText = "Don't forget to use your **sunscreen**"
             self.itemReminderEmoji = "🧴"
