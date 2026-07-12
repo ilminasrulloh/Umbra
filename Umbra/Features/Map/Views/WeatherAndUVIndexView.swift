@@ -17,12 +17,11 @@ struct WeatherAndUVIndexView: View {
         VStack(alignment: .center) {
                 HStack {
                     Text(viewModel.weatherText)
-                        .font(.title3)
+                        .font(.body)
                         .foregroundStyle(.primary)
-                        .padding(.leading, 20)
+                        .padding(.leading, 40)
+                        .padding(.trailing, 20)
                         .padding(.vertical, 10)
-                    
-                    Spacer()
                     
                     Button(action: {
                         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
@@ -30,7 +29,7 @@ struct WeatherAndUVIndexView: View {
                         }
                     }){
                         Image(systemName: expandWeatherUVView ? "chevron.up" : "chevron.down")
-                            .font(.title2)
+                            .font(.title3)
                             .padding(20)
                             .background(Color(.secondarySystemBackground))
                             .cornerRadius(25)
@@ -42,11 +41,15 @@ struct WeatherAndUVIndexView: View {
                 
                 if expandWeatherUVView {
                     VStack(spacing: 0) {
-                        HStack {
+                        HStack{
                             Text("🌡️ Feels Like **\(viewModel.feelsLike)°**")
-                            Text("☀️ UV Index: **\(viewModel.uvIndex) (\(viewModel.uvIndexText))**")
+                                .padding(.leading, 10)
+                            
+                            Spacer()
+                            
+                            Text("☀️ UV Index: **\(viewModel.uvIndex) (\(viewModel.uvIndexText))**").padding(.trailing, 10)
                         }
-                        .font(.callout)
+                        .font(.subheadline)
                         .padding(10)
                         .frame(maxWidth: .infinity)
                         .background(Color(.systemBackground))
@@ -61,7 +64,7 @@ struct WeatherAndUVIndexView: View {
                         .frame(height: 100)
                         
                         WeatherNavigationDots(currentPage: $currentPage)
-                            .background(Color(.systemGroupedBackground))
+                            .background(Color(.secondarySystemBackground))
                     }
                     
                     .frame(width: 350)
@@ -82,13 +85,13 @@ private struct WeatherCard: View {
     
     var body: some View {
         Text(LocalizedStringKey(text))
-            .font(.body)
+            .font(.callout)
             .foregroundStyle(Color(.secondaryLabel))
             .multilineTextAlignment(.center)
             .frame(maxWidth: .infinity, alignment: .center)
             .padding(15)
             .frame(maxHeight: .infinity, alignment: .center)
-            .background(Color(.systemGroupedBackground))
+            .background(Color(.secondarySystemBackground))
     }
 }
 
