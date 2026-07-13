@@ -363,7 +363,7 @@ struct MapView: View {
     private var routeCalloutAnnotations: some MapContent {
         ForEach(orderedRouteOptions, id: \.kind) { option in
             if let coordinate = viewModel.midpointCoordinate(for: option.kind) {
-                Annotation("", coordinate: coordinate, anchor: .top) {
+                Annotation("", coordinate: coordinate, anchor: .topLeading) {
                     RouteCalloutBubble(option: option, isSelected: option.kind == selectedRouteKind)
                         .scaleEffect(max(0.75, min(1.0, 3000 / cameraDistance)))
                         .animation(.interactiveSpring, value: cameraDistance)

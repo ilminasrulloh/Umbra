@@ -23,6 +23,8 @@ struct WeatherAndUVIndexView: View {
                     .padding(.trailing, 16)
                     .padding(.vertical, 10)
                 
+                Spacer(minLength: 0)
+                
                 Button(action: {
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                         expandWeatherUVView.toggle()

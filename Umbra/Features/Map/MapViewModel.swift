@@ -98,16 +98,15 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
     
     var results: [MKLocalSearchCompletion] = []
     var nearbyResults: [MKMapItem] = []
-    var temperature: Int = 28
-    var uvIndex: Int = 7
-    var feelsLike: Int = 32
+    var temperature: Int = 2
+    var uvIndex: Int = 1
+    var feelsLike: Int = 3
     var weatherEmoji: String = "sun.max"
     
     var weatherText: String = "**Scorching hot** out there! 🥵"
     var weatherSuggestion: String = "Why sweat it? Pick our **Recommended Route** for the breeziest, most **comfortable walk**."
     var uvIndexText: String = "High"
-    var itemReminderText: String = "Don't forget your **sunscreen** and a handy **umbrella**!"
-    var itemReminderEmoji: String = "⛱️"
+    var itemReminderText: String = "Don't forget your **sunscreen** and a handy **umbrella**! ⛱️"
     
     let weatherService = WeatherService.shared
     private let completer = MKLocalSearchCompleter()
@@ -407,18 +406,15 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
         if self.temperature >= 30 {
             self.weatherText = "**Scorching hot** out there! 🥵"
             self.weatherSuggestion = "Why sweat it? Pick our **Recommended Route** for the breeziest, most **comfortable walk**."
-            self.itemReminderText = "Don't forget your **sunscreen** and a handy **umbrella**!"
-            self.itemReminderEmoji = "⛱️"
+            self.itemReminderText = "Don't forget your **sunscreen** and a handy **umbrella**! ⛱️"
         } else if self.temperature <= 18 {
             self.weatherText = "It's **kinda cold** today! 🫨"
             self.weatherSuggestion = "**Any routes** are fine today!"
-            self.itemReminderText = "Dress **warmly** and bring your **umbrella**!"
-            self.itemReminderEmoji = "🧥"
+            self.itemReminderText = "Dress **warmly** and bring your **umbrella**! 🧥"
         } else {
             self.weatherText = "The weather is **nice** today! ☺️"
             self.weatherSuggestion = "Pick **Recommended Route** for more Comfort"
-            self.itemReminderText = "Don't forget to use your **sunscreen**"
-            self.itemReminderEmoji = "🧴"
+            self.itemReminderText = "Don't forget to use your **sunscreen** 🧴"
         }
         
         if self.uvIndex >= 8 {
