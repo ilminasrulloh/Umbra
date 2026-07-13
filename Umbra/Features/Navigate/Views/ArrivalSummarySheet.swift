@@ -58,7 +58,6 @@ struct ArrivalSummarySheet: View {
     private var arrivalMessage: Text {
         let minutes = info.minutesOfSunAvoided
         let unit = minutes == 1 ? "minute" : "minutes"
-        return Text("You're here! That's " + "\(minutes) \(unit) of sun").fontWeight(.bold)
-        + Text(" you didn't have to deal with.")
+        return Text("You're here! That's **\(minutes) \(unit) of sun** you didn't have to deal with.")
     }
 }
