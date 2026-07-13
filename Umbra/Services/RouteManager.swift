@@ -17,7 +17,8 @@ class RouteManager {
     }
     
     func loadRouteGraph() {
-        guard let url = Bundle.main.url(forResource: "1400", withExtension: "json") else { return }
+        let filename = getCurrentFilename()
+        guard let url = Bundle.main.url(forResource: filename, withExtension: "json") else { return }
         do {
             let loadedGraph = try RouteGraph(jsonURL: url)
             self.graph = loadedGraph
@@ -153,5 +154,11 @@ class RouteManager {
             shadedLength: core.shadedLength,
             segments: allSegments
         )
+    }
+    
+    private func getCurrentFilename() -> String {
+        let hour = Calendar.current.component(.hour, from: Date())
+        guard (6...18).contains(hour) else { return "1400" }
+        return String(format: "%02d00", hour)
     }
 }

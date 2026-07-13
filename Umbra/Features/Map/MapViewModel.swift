@@ -407,7 +407,7 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
             self.weatherText = "**Scorching hot** out there! 🥵"
             self.weatherSuggestion = "Why sweat it? Pick our **Recommended Route** for the breeziest, most **comfortable walk**."
             self.itemReminderText = "Don't forget your **sunscreen** and a handy **umbrella**! ⛱️"
-        } else if self.temperature <= 18 {
+        } else if self.temperature <= 15 {
             self.weatherText = "It's **kinda cold** today! 🫨"
             self.weatherSuggestion = "**Any routes** are fine today!"
             self.itemReminderText = "Dress **warmly** and bring your **umbrella**! 🧥"

@@ -122,11 +122,11 @@ struct NavigateView: View {
                 heading: effectiveNavigationHeading(location: newLocation)
             )
             
-            if viewModel.isOffRoute(newLocation) {
-                Task {
-                    await viewModel.calculateRoute(from: newLocation.coordinate, to: currentDestination, kind: viewModel.selectedKind)
-                }
-            }
+//            if viewModel.isOffRoute(newLocation) {
+//                Task {
+//                    await viewModel.calculateRoute(from: newLocation.coordinate, to: currentDestination, kind: viewModel.selectedKind)
+//                }
+//            }
         }
         .onChange(of: locationManager.heading?.timestamp) { _, _ in
             guard viewModel.isNavigating, let currentLocation = locationManager.userLocation else { return }
