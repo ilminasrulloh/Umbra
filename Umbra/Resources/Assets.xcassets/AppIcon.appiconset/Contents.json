@@ -1,7 +1,7 @@
 {
   "images" : [
     {
-      "filename" : "Umbra Light.png",
+      "filename" : "Umbra-Icon.png",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"
@@ -13,7 +13,6 @@
           "value" : "dark"
         }
       ],
-      "filename" : "Umbra Dark.png",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"
