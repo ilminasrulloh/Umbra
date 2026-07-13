@@ -14,6 +14,7 @@ import Combine
 @MainActor
 @Observable
 final class NavigateViewModel: NSObject {
+    let mapViewModel = MapViewModel()
     var navigationRouteResult: RouteResult?
     var camera: MapCameraPosition = .automatic
     var currentStepIndex: Int = 0
@@ -226,6 +227,7 @@ final class NavigateViewModel: NSObject {
     
     // NAVIGATION SETTINGS
     func startNavigation(from origin: CLLocationCoordinate2D, to destination: CLLocationCoordinate2D, kind: String) async {
+        mapViewModel.pingWeatherManager = false
         selectedKind = kind
         destinationCoordinate = destination
         didArrive = false
@@ -238,6 +240,7 @@ final class NavigateViewModel: NSObject {
     }
     
     func stopNavigation() {
+        mapViewModel.pingWeatherManager = true
         isNavigating = false
         navigationRouteResult = nil
         currentStepIndex = 0

@@ -111,7 +111,7 @@ class MapViewModel: NSObject, MKLocalSearchCompleterDelegate {
     let weatherService = WeatherService.shared
     private let completer = MKLocalSearchCompleter()
     
-    var pingWeatherManager = false
+    var pingWeatherManager = true
     var userCurrentPosition: MapCameraPosition = .userLocation(fallback: .automatic)
     var userOriginText = ""
     var userDestinationText = ""

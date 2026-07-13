@@ -17,3 +17,4 @@ struct ArrivalInfo: Identifiable {
     let destinationTitle: String
     let minutesOfSunAvoided: Int
 }
+
