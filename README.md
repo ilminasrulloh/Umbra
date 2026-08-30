@@ -9,6 +9,9 @@
 ![MapKit](https://img.shields.io/badge/MapKit-0D1117?style=flat-square&logo=apple&logoColor=white)
 ![WeatherKit](https://img.shields.io/badge/WeatherKit-0D1117?style=flat-square&logo=apple&logoColor=white)
 ![Status](https://img.shields.io/badge/status-active-brightgreen?style=flat-square)
+[![TestFlight](https://img.shields.io/badge/TestFlight-0D96F6?style=flat-square&logo=testflight&logoColor=white)](https://testflight.apple.com/join/GrMfudQd)
+
+### 📲 [Now available on TestFlight!](https://testflight.apple.com/join/GrMfudQd)
 
 </div>
 
@@ -68,6 +71,10 @@ Umbra/
 - Swift 5.0
 - A physical iOS device is recommended for accurate live location, heading, and WeatherKit data
 - The WeatherKit capability must be enabled on the signing team/App ID (see `Umbra.entitlements`)
+
+## 📲 Try It Yourself
+
+Umbra is live on TestFlight, no Xcode required. **[Join the beta →](https://testflight.apple.com/join/GrMfudQd)**
 
 ## 🤝 Get Involved
 
